@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNow, formatTime } from './hooks/useNow'
+import { useScreen } from './hooks/useScreen'
 import { Home } from './apps/Home'
 import { Call } from './apps/Call'
 import { Messages } from './apps/Messages'
@@ -28,6 +29,7 @@ export function App() {
   const time = formatTime(now)
   const [screen, setScreen] = useState<Screen>('home')
   const goHome = useCallback(() => setScreen('home'), [])
+  const display = useScreen()
 
   // Escape (or a hardware back key mapped to it) always returns home.
   useEffect(() => {
@@ -47,6 +49,7 @@ export function App() {
       ) : (
         <Home now={now} time={time} onOpen={setScreen} />
       )}
+      {display?.on === false && <div className="screen-off" aria-hidden />}
     </main>
   )
 }

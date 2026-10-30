@@ -120,6 +120,15 @@ p {
   padding: calc(56px + env(safe-area-inset-top)) 32px calc(40px + env(safe-area-inset-bottom));
 }
 
+/* Shown while the daemon suspends: looks off at once, swallows stray touches. */
+.screen-off {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  touch-action: none;
+}
+
 .screen {
   display: flex;
   flex-direction: column;

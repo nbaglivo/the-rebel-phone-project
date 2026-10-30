@@ -37,6 +37,9 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `POWER_SUPPLY_DIR` | `/sys/class/power_supply`  |
 | `BACKLIGHT_DIR`    | `/sys/class/backlight`     |
 | `POLL_MS`          | `10000`                    |
+| `INPUT_DIR`        | `/dev/input`               |
+| `IDLE_MS`          | `30000` (`0`: never idle)  |
+| `SUSPEND_CMD`      | `systemctl suspend`        |
 
 ## Event contract (`GET /events`, server-sent events)
 
@@ -48,11 +51,28 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | Event      | Payload                                                                      | Source |
 | ---------- | ---------------------------------------------------------------------------- | ------ |
 | `battery`  | `{ level: 0-100 \| null, status: "Charging"\|"Discharging"\|"Full"\|"Not charging" \| null }` | sysfs `type == Battery` → `capacity`, `status` (later: UPower signals) |
+| `screen`   | `{ on: boolean }` | `false` while suspending or suspended, see below |
 
-Planned (not built yet): `network`, `modem` (signal, operator), `call`
-(incoming/active), `sms`, `brightness`, `power-button`.
+### Screen power = suspend
+
+cage 0.3 has no `wlr-output-power-management`, so the display can't be powered
+off on its own (and brightness 0 measured as no saving: ~130 mA either way).
+Screen off is therefore suspend (`s2idle`), which powers the panel down too.
+
+The daemon reads every `INPUT_DIR/event*` (raw `struct input_event`). Any key
+or touch (`EV_KEY`/`EV_ABS`) while on restarts the `IDLE_MS` timer; when it
+fires, or on a power key press, it publishes `screen: { on: false }` and runs
+`SUSPEND_CMD` (logind allows it from the active seat session). Waking: the
+power key is a wakeup source. Timers stop during suspend but the wall clock
+doesn't, so a jump of more than 5 s means "woke up" (from anything) and sets
+`on: true`; a power key press within 2 s of a change can't send it straight
+back to sleep. If no input device can be opened it never suspends.
+While `screen.on` is false the shell covers itself with `.screen-off`, so
+the screen looks off immediately and stray touches go nowhere.
 
 ## Actions (`POST /actions/<name>`, JSON body)
+
+Built: `screen { on: boolean }` (`false` suspends).
 
 Planned: `brightness { level }`, `call { number }`, `call/hangup`,
 `sms/send { to, body }`, `suspend`. Return `204` on success, `4xx` with
@@ -71,6 +91,8 @@ Planned: `brightness { level }`, `call { number }`, `call/hangup`,
 1. Daemon in `daemon/server.mjs`: static + SSE + battery (sysfs polling). ✓
 2. Fixtures in `daemon/fixtures/` for running without the phone. ✓
 3. Brightness (sysfs read + write action). ← next
-4. Power button / suspend (`/dev/input`, logind).
+4. Power button / suspend (`/dev/input`, logind). Idle and power key
+   suspend ✓; still to do: wake for calls/SMS (modem), keep awake for
+   calls and music.
 5. Modem: calls + SMS via ModemManager (`dbus-next`).
 6. Switch battery to UPower signals (no polling).

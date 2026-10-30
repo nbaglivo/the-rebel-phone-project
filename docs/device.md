@@ -67,6 +67,12 @@ printf '%s\n' \
   | doas tee /etc/doas.d/zz-calm.conf
 ```
 
+For suspend (docs/architecture.md → "Screen power = suspend") the daemon
+reads `/dev/input` (`user` is in the `input` group on this image) and owns
+the power key. postmarketOS already sets logind's `HandlePowerKey=ignore`; if a
+power key press ever shuts the phone down, check it with
+`busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandlePowerKey`.
+
 Then run `./scripts/deploy.sh` once from the Mac (until it has, the symlink
 points at nothing and the session can't start).
 
@@ -75,6 +81,12 @@ doas rules go in `/etc/doas.d/zz-calm.conf` because the last matching rule
 wins and the image's own `/etc/doas.d/` rules would otherwise override them.
 
 ## Gotchas we already hit
+
+- **SSH times out**: the phone is probably suspended (30 s idle). Press the
+  power button, and touch the screen now and then while working over SSH.
+- **Measuring power**: `current_now` of `bq27411-0` is only meaningful
+  unplugged (on USB it shows the charge current). Scripts that must survive
+  the SSH session ending need `systemd-run --user`, not `nohup`/`setsid`.
 
 - **Tiny window / app uses part of the screen**: caused by Chromium's
   `--force-device-scale-factor` on Wayland. Scale the output with
