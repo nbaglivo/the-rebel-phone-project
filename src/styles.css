@@ -1,10 +1,11 @@
 /* Tokens — taken from nbaglivo.dev: warm paper, warm ink, Plex Sans light + Plex Mono */
 :root {
-  --bg: #faf8f4;
-  --ink: #38352f;
-  --muted: #726d62;
-  --line: #e4e0d8;
-  --on-ink: #faf8f4;
+  --bg: #f1eadb;
+  --ink: #3b362d;
+  --muted: #6b6354;
+  --line: #ddd3bf;
+  --on-ink: #f1eadb;
+  --paper: url('/paper.png');
 
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -19,6 +20,7 @@
     --muted: #a29c90;
     --line: #3a3833;
     --on-ink: #1c1b19;
+    --paper: none;
     color-scheme: dark;
   }
 }
@@ -29,6 +31,7 @@
   --muted: #a29c90;
   --line: #3a3833;
   --on-ink: #1c1b19;
+  --paper: none;
   color-scheme: dark;
 }
 
@@ -46,7 +49,7 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background: var(--paper) var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 16px;
