@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 
 // One EventSource for the whole shell. The daemon sends every event's current
 // value on connect and then only changes, so the last value is cached here for
-// components that mount later.
+// components that mount later. EventSource only delivers named events that have
+// a listener, so a name first asked for after connecting reconnects: the
+// daemon then replays every current value, including the new one.
 
 type Listener = (data: unknown) => void
 
@@ -10,19 +12,28 @@ let source: EventSource | null = null
 const last = new Map<string, unknown>()
 const listeners = new Map<string, Set<Listener>>()
 
-function subscribe(event: string, listener: Listener): () => void {
-  source ??= new EventSource('/events')
-
-  let set = listeners.get(event)
-  if (!set) {
-    const subscribers = new Set<Listener>()
-    listeners.set(event, subscribers)
+function connect() {
+  source?.close()
+  source = new EventSource('/events')
+  for (const [event, subscribers] of listeners) {
     source.addEventListener(event, (e) => {
       const data = JSON.parse((e as MessageEvent<string>).data)
       last.set(event, data)
       for (const l of subscribers) l(data)
     })
-    set = subscribers
+  }
+}
+
+let reconnect: number | undefined
+
+function subscribe(event: string, listener: Listener): () => void {
+  let set = listeners.get(event)
+  if (!set) {
+    set = new Set()
+    listeners.set(event, set)
+    // Batch the names that mount together into one connection.
+    window.clearTimeout(reconnect)
+    reconnect = window.setTimeout(connect, 0)
   }
 
   set.add(listener)

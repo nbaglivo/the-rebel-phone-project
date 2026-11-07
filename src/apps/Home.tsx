@@ -4,7 +4,7 @@ import { Squiggle } from '../components/Icons'
 import { BatteryIndicator } from '../components/BatteryIndicator'
 import { useBattery } from '../hooks/useBattery'
 
-const launcher: AppId[] = ['call', 'messages', 'notes', 'music', 'read']
+const launcher: AppId[] = ['call', 'messages', 'notes', 'listen', 'read']
 
 export function Home({ now, time, onOpen }: { now: Date; time: string; onOpen: (app: AppId) => void }) {
   const battery = useBattery()

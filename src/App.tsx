@@ -5,10 +5,10 @@ import { Home } from './apps/Home'
 import { Call } from './apps/Call'
 import { Messages } from './apps/Messages'
 import { Notes } from './apps/Notes'
-import { Music } from './apps/Music'
+import { Listen } from './apps/Listen'
 import { Read } from './apps/Read'
 
-export type AppId = 'call' | 'messages' | 'notes' | 'music' | 'read'
+export type AppId = 'call' | 'messages' | 'notes' | 'listen' | 'read'
 type Screen = 'home' | AppId
 
 export interface AppProps {
@@ -20,7 +20,7 @@ const apps: Record<AppId, (props: AppProps) => React.ReactNode> = {
   call: Call,
   messages: Messages,
   notes: Notes,
-  music: Music,
+  listen: Listen,
   read: Read,
 }
 

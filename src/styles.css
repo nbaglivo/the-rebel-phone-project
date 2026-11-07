@@ -455,8 +455,18 @@ p {
   height: 52px;
 }
 
+.seek {
+  padding: 14px 0;
+  margin: -14px 0;
+  touch-action: none;
+}
+
 .queue {
-  margin-top: auto;
+  margin-top: 8px;
+}
+
+.queue button[aria-current='true'] .t {
+  font-weight: 600;
 }
 
 .queue button {
@@ -470,10 +480,6 @@ p {
 
 .queue button[aria-current='true'] {
   color: var(--ink);
-}
-
-.queue .n {
-  width: 20px;
 }
 
 .queue .t {

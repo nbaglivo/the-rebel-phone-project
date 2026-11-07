@@ -21,12 +21,6 @@ export interface Note {
   when: string
 }
 
-export interface Track {
-  title: string
-  artist: string
-  length: string
-}
-
 export interface Article {
   title: string
   source: string
@@ -65,13 +59,6 @@ export const notes: Note[] = [
   { text: 'Buy coffee beans before Saturday.', when: 'today' },
   { text: 'Shell idea: swipe down = back, nothing else.', when: 'yesterday' },
   { text: 'Ask about the workshop space in Gràcia.', when: 'mon' },
-]
-
-export const tracks: Track[] = [
-  { title: 'Morning, slowly', artist: 'Side A', length: '4:30' },
-  { title: 'Window light', artist: 'Side A', length: '3:12' },
-  { title: 'Long walk home', artist: 'Side B', length: '5:05' },
-  { title: 'Quiet hours', artist: 'Side B', length: '6:18' },
 ]
 
 export const articles: Article[] = [
