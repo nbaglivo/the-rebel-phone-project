@@ -12,3 +12,4 @@ dist
 .idea
 .claude/settings.local.json
 .claude/.cc-writes/
+.superpowers/
