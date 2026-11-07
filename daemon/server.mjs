@@ -11,6 +11,9 @@ import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import { createActions } from './actions.mjs'
+import { createBacklight } from './backlight.mjs'
+import { classifyInput } from './input.mjs'
+import { decideScreenOff, usbOnline } from './power.mjs'
 import { SPEAKER_SINK, HEADPHONES_SINK, createAudio } from './audio.mjs'
 import { createMpv } from './listen/mpv.mjs'
 import { createPlayer } from './listen/player.mjs'
@@ -23,6 +26,7 @@ const STATIC_DIR = resolve(process.env.STATIC_DIR ?? '/opt/calm')
 const POWER_SUPPLY_DIR = process.env.POWER_SUPPLY_DIR ?? '/sys/class/power_supply'
 const POLL_MS = Number(process.env.POLL_MS ?? 10_000)
 const INPUT_DIR = process.env.INPUT_DIR ?? '/dev/input'
+const BACKLIGHT_DIR = process.env.BACKLIGHT_DIR ?? '/sys/class/backlight'
 const IDLE_MS = Number(process.env.IDLE_MS ?? 30_000)
 const SUSPEND_CMD = (process.env.SUSPEND_CMD ?? 'systemctl suspend').split(' ')
 const MUSIC_DIR = process.env.MUSIC_DIR ?? '/home/user/Music'
@@ -98,37 +102,78 @@ async function pollBattery() {
 
 // cage can't power the display off (no wlr-output-power-management), so screen
 // off means suspend: s2idle powers the panel down along with everything else.
+// Suspend stops audio, so while something plays the screen only blanks
+// (backlight 0 + the shell's cover) and the phone stays awake.
 
 // struct input_event on 64-bit: timeval (16), type u16, code u16, value s32.
 const EVENT_SIZE = 24
-const EV_KEY = 1
-const EV_ABS = 3
-const KEY_POWER = 116
 // The press that woke the phone and the resume check below both turn the screen on.
 const SETTLE_MS = 2_000
 
+const backlight = createBacklight(BACKLIGHT_DIR)
 let screenOn = true
+let blanked = false
 let changedAt = 0
 let idleTimer
+let blankSuspendTimer
 let canWake = false
 
 function armIdle() {
   clearTimeout(idleTimer)
-  if (IDLE_MS > 0) idleTimer = setTimeout(() => setScreen(false), IDLE_MS)
+  if (IDLE_MS > 0) idleTimer = setTimeout(() => setScreen(false, 'idle'), IDLE_MS)
 }
 
-function setScreen(on) {
-  if (on === screenOn) return
-  // Never sleep without an input device to notice the wake-up press.
-  if (!on && !canWake) return
-  screenOn = on
-  changedAt = Date.now()
-  publish('screen', { on })
-  if (on) return armIdle()
-  clearTimeout(idleTimer)
+function suspend() {
   execFile(SUSPEND_CMD[0], SUSPEND_CMD.slice(1), (err, _out, stderr) => {
     if (err) console.error(`screen: ${SUSPEND_CMD.join(' ')} failed: ${stderr.trim() || err.message}`)
   })
+}
+
+async function setScreen(on, reason = 'power') {
+  if (on === screenOn) return
+  // Never sleep without an input device to notice the wake-up press.
+  if (!on && !canWake) return
+  if (on) {
+    screenOn = true
+    changedAt = Date.now()
+    clearTimeout(blankSuspendTimer)
+    blankSuspendTimer = undefined
+    if (blanked) await backlight.restore()
+    blanked = false
+    publish('screen', { on: true })
+    return armIdle()
+  }
+  const decision = decideScreenOff({ reason, playing: player.isPlaying(), usb: await usbOnline(POWER_SUPPLY_DIR) })
+  if (decision === 'stay') return armIdle()
+  screenOn = false
+  changedAt = Date.now()
+  clearTimeout(idleTimer)
+  publish('screen', { on: false })
+  if (decision === 'blank') {
+    blanked = true
+    await backlight.blank()
+  } else {
+    suspend()
+  }
+}
+
+// Blanked and playback stopped (pause, unplug, end of list): sleep after IDLE_MS,
+// unless something plays again or the power key comes first.
+function checkBlanked() {
+  if (!blanked || IDLE_MS <= 0) return
+  if (player.isPlaying()) {
+    clearTimeout(blankSuspendTimer)
+    blankSuspendTimer = undefined
+  } else if (!blankSuspendTimer) {
+    blankSuspendTimer = setTimeout(async () => {
+      blankSuspendTimer = undefined
+      if (!blanked || player.isPlaying()) return
+      if (decideScreenOff({ reason: 'idle', playing: false, usb: await usbOnline(POWER_SUPPLY_DIR) }) !== 'suspend') return
+      blanked = false
+      await backlight.restore()
+      suspend()
+    }, IDLE_MS)
+  }
 }
 
 // Timers stop during suspend but the wall clock doesn't: a jump means we woke
@@ -138,15 +183,20 @@ setInterval(() => {
   const now = Date.now()
   if (now - lastTick > 5_000) setScreen(true)
   lastTick = now
+  checkBlanked()
 }, 1_000).unref()
 
 // Only the power key wakes the screen; touches while off are ignored (pocket).
+// Volume keys work while blanked; the headphone jack goes to the player.
 function onInput(type, code, value) {
-  if (type === EV_KEY && code === KEY_POWER) {
-    if (value === 1 && (!screenOn || Date.now() - changedAt > SETTLE_MS)) setScreen(!screenOn)
-  } else if (screenOn && (type === EV_KEY || type === EV_ABS)) {
-    armIdle()
+  const kind = classifyInput(type, code, value)
+  if (kind === 'power') {
+    if (!screenOn || Date.now() - changedAt > SETTLE_MS) setScreen(!screenOn)
+    return
   }
+  if (kind === 'volup' || kind === 'voldown') audio.stepVolume(kind === 'volup' ? 1 : -1)
+  else if (kind === 'hp-in' || kind === 'hp-out') player.onHeadphones(kind === 'hp-in')
+  if (kind && screenOn) armIdle()
 }
 
 async function watchDevice(path) {

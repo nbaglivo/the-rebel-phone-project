@@ -82,6 +82,18 @@ wins and the image's own `/etc/doas.d/` rules would otherwise override them.
 
 ## Gotchas we already hit
 
+- **No sound although mpv says it's playing**: PulseAudio (not PipeWire) is
+  what actually serves audio here — it autospawns on the first client — and
+  its default sink is `alsa_output.platform-snd_aloop.0.analog-stereo`, a
+  loopback that goes nowhere. Pick the sink explicitly:
+  `mpv --audio-device=pulse/alsa_output.platform-sound.HiFi__Speaker__sink`
+  (headphones: `…HiFi__Headphones__sink`). `pactl list short sinks` lists
+  them; `wpctl status` shows nothing because PipeWire owns no devices.
+- **`systemd-inhibit` over SSH**: "Access denied … interactive authentication"
+  — polkit only grants sleep inhibitors to the active seat session, so you
+  can't keep the phone awake from SSH. The daemon keeps it awake on USB power
+  instead.
+
 - **SSH times out**: the phone is probably suspended (30 s idle). Press the
   power button, and touch the screen now and then while working over SSH.
 - **Measuring power**: `current_now` of `bq27411-0` is only meaningful

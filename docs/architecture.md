@@ -90,6 +90,22 @@ back to sleep. If no input device can be opened it never suspends.
 While `screen.on` is false the shell covers itself with `.screen-off`, so
 the screen looks off immediately and stray touches go nowhere.
 
+Suspend stops audio, so `daemon/power.mjs` decides how the screen goes off:
+
+- **Playing** (idle or power key): **blank** — `screen: { on: false }`,
+  backlight to 0 (`BACKLIGHT_DIR`), no suspend. Only the power key unblanks.
+  If playback stops while blanked, it suspends after `IDLE_MS`.
+- **On USB or mains power** (any `POWER_SUPPLY_DIR` supply of type `USB` or
+  `Mains` with `online == 1`): idle never turns the screen off; the power key
+  still does.
+- **Otherwise:** suspend, as above.
+
+Volume keys (`KEY_VOLUMEUP`/`DOWN`, also while blanked) step the active
+PulseAudio sink by 5 % (`pactl`). The headphone jack switch
+(`EV_SW`/`SW_HEADPHONE_INSERT`) selects the headphones or speaker sink, and
+unplugging pauses. The jack state at startup can't be read without an ioctl,
+so the daemon starts on the speaker.
+
 ## Actions (`POST /actions/<name>`, JSON body)
 
 Built: `screen { on: boolean }` (`false` suspends);
