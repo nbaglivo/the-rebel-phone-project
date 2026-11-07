@@ -1,10 +1,10 @@
 /* Tokens — taken from nbaglivo.dev: warm paper, warm ink, Plex Sans light + Plex Mono */
 :root {
-  --bg: #f1eadb;
-  --ink: #3b362d;
-  --muted: #6b6354;
-  --line: #ddd3bf;
-  --on-ink: #f1eadb;
+  --bg: #e9dfc9;
+  --ink: #393328;
+  --muted: #655d4e;
+  --line: #d3c7ae;
+  --on-ink: #e9dfc9;
   --paper: url('/paper.png');
 
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
