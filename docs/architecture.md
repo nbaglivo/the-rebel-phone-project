@@ -40,6 +40,12 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `INPUT_DIR`        | `/dev/input`               |
 | `IDLE_MS`          | `30000` (`0`: never idle)  |
 | `SUSPEND_CMD`      | `systemctl suspend`        |
+| `MUSIC_DIR`        | `/home/user/Music`         |
+| `STATE_FILE`       | `~/.local/state/calm/listen.json` (outside `/opt/calm-daemon`: deploy wipes it) |
+| `MPV_CMD`          | `mpv` (Mac tests: `mpv --ao=null`) |
+| `FFPROBE_CMD`      | `ffprobe`                  |
+| `SPEAKER_SINK`     | `alsa_output.platform-sound.HiFi__Speaker__sink` |
+| `HEADPHONES_SINK`  | `alsa_output.platform-sound.HiFi__Headphones__sink` |
 
 ## Event contract (`GET /events`, server-sent events)
 
@@ -52,6 +58,20 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | ---------- | ---------------------------------------------------------------------------- | ------ |
 | `battery`  | `{ level: 0-100 \| null, status: "Charging"\|"Discharging"\|"Full"\|"Not charging" \| null }` | sysfs `type == Battery` → `capacity`, `status` (later: UPower signals) |
 | `screen`   | `{ on: boolean }` | `false` while suspending or suspended, see below |
+| `listen`   | `{ current: { id, title, folder, duration } \| null, playing, position, positionAt, error: string \| null }` | the player (`daemon/listen/`); sent on changes and at most every 5 s while playing — the shell interpolates from `positionAt` (ms) |
+| `library`  | `[{ id, title, folder, duration, position, lastPlayed }]`, recently played first, then unplayed by title | scan of `MUSIC_DIR` (`id` = path relative to it) |
+
+### Listen
+
+The daemon runs one `mpv --idle` and drives it over its JSON IPC socket
+(`daemon/listen/mpv.mjs`); if mpv dies it is restarted and the current file
+reloads **paused**. Positions, last-played times and the ffprobe cache live
+in `STATE_FILE` (atomic JSON writes, every 5 s while playing and on every
+change and SIGTERM). "Next" is the next file by path in natural order;
+reached by advancing, files over 20 minutes resume their saved spot, shorter
+ones start at 0. A file that fails to play shows a muted error for 5 s and is
+skipped. Output always goes to an explicit PulseAudio sink (the phone's
+default sink is a silent loopback, see `docs/device.md`).
 
 ### Screen power = suspend
 
@@ -72,7 +92,10 @@ the screen looks off immediately and stray touches go nowhere.
 
 ## Actions (`POST /actions/<name>`, JSON body)
 
-Built: `screen { on: boolean }` (`false` suspends).
+Built: `screen { on: boolean }` (`false` suspends);
+`listen/play { id? }` (no `id`: resume current; unknown `id` → 400),
+`listen/pause`, `listen/seek { to }` (seconds, clamped to the file),
+`listen/back` (−30 s), `listen/restart`, `listen/next`, `listen/rescan`.
 
 Planned: `brightness { level }`, `call { number }`, `call/hangup`,
 `sms/send { to, body }`, `suspend`. Return `204` on success, `4xx` with

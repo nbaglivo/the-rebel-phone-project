@@ -8,7 +8,14 @@ process.env.UV_THREADPOOL_SIZE ??= '16'
 import { execFile } from 'node:child_process'
 import { createServer } from 'node:http'
 import { open, readFile, readdir, stat } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
+import { createActions } from './actions.mjs'
+import { SPEAKER_SINK, HEADPHONES_SINK, createAudio } from './audio.mjs'
+import { createMpv } from './listen/mpv.mjs'
+import { createPlayer } from './listen/player.mjs'
+import { probe } from './listen/probe.mjs'
+import { createStore } from './listen/store.mjs'
 
 const HOST = '127.0.0.1'
 const PORT = Number(process.env.PORT ?? 8080)
@@ -18,6 +25,10 @@ const POLL_MS = Number(process.env.POLL_MS ?? 10_000)
 const INPUT_DIR = process.env.INPUT_DIR ?? '/dev/input'
 const IDLE_MS = Number(process.env.IDLE_MS ?? 30_000)
 const SUSPEND_CMD = (process.env.SUSPEND_CMD ?? 'systemctl suspend').split(' ')
+const MUSIC_DIR = process.env.MUSIC_DIR ?? '/home/user/Music'
+const STATE_FILE = process.env.STATE_FILE ?? join(homedir(), '.local/state/calm/listen.json')
+const MPV_CMD = process.env.MPV_CMD ?? 'mpv'
+const FFPROBE_CMD = process.env.FFPROBE_CMD ?? 'ffprobe'
 
 // ---------- State + SSE ----------
 
@@ -242,12 +253,21 @@ async function readJson(req) {
   return JSON.parse(body)
 }
 
-const actions = {
-  screen: ({ on }) => {
-    if (typeof on !== 'boolean') return '`on` must be a boolean'
-    setScreen(on)
-  },
-}
+// ---------- Listen (mpv) ----------
+
+const mpv = createMpv({ cmd: MPV_CMD, socketPath: join(tmpdir(), `calm-mpv-${process.pid}.sock`) })
+const audio = createAudio({ mpv })
+const player = createPlayer({
+  musicDir: MUSIC_DIR,
+  store: createStore(STATE_FILE),
+  mpv,
+  probe: (path) => probe(path, FFPROBE_CMD),
+  publish,
+  setSink: audio.setSink,
+  sinks: { speaker: SPEAKER_SINK, headphones: HEADPHONES_SINK },
+})
+
+const actions = createActions({ setScreen, player })
 
 async function action(req, res, name) {
   if (!Object.hasOwn(actions, name)) return send(res, 404, 'Unknown action')
@@ -259,7 +279,13 @@ async function action(req, res, name) {
     return sendJson(res, 400, { error: 'invalid JSON body' })
   }
   if (body === null || typeof body !== 'object') return sendJson(res, 400, { error: 'body must be an object' })
-  const error = actions[name](body)
+  let error
+  try {
+    error = await actions[name](body)
+  } catch (err) {
+    console.error(`action ${name} failed: ${err.message}`)
+    return sendJson(res, 500, { error: err.message })
+  }
   if (error) return sendJson(res, 400, { error })
   res.writeHead(204)
   res.end()
@@ -278,6 +304,26 @@ setInterval(pollBattery, POLL_MS)
 publish('screen', { on: true })
 watchInput()
 
+// Not awaited: probing a large library on first run must not delay the shell.
+;(async () => {
+  try {
+    await mpv.start()
+    await audio.setSink(SPEAKER_SINK)
+  } catch (err) {
+    console.error(`listen: mpv didn't start (${err.message}); playback is unavailable`)
+  }
+  await player.init()
+})().catch((err) => console.error(`listen: init failed: ${err.message}`))
+
+// tinydm restarts send SIGTERM: save positions first, never lose a book.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, async () => {
+    await player.flush().catch(() => {})
+    await mpv.stop().catch(() => {})
+    process.exit(0)
+  })
+}
+
 server.listen(PORT, HOST, () => {
-  console.log(`calm daemon on http://${HOST}:${PORT} (static: ${STATIC_DIR}, power: ${POWER_SUPPLY_DIR})`)
+  console.log(`calm daemon on http://${HOST}:${PORT} (static: ${STATIC_DIR}, power: ${POWER_SUPPLY_DIR}, music: ${MUSIC_DIR})`)
 })
