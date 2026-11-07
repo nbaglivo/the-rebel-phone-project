@@ -366,11 +366,13 @@ watchInput()
 })().catch((err) => console.error(`listen: init failed: ${err.message}`))
 
 // tinydm restarts send SIGTERM: save positions first, never lose a book.
+// Then re-raise the signal instead of process.exit(): exit joins the libuv
+// pool threads, and the ones blocked reading /dev/input never return.
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, async () => {
     await player.flush().catch(() => {})
     await mpv.stop().catch(() => {})
-    process.exit(0)
+    process.kill(process.pid, signal)
   })
 }
 
