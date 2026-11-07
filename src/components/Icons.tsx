@@ -47,13 +47,6 @@ export const Backspace = () => (
   </svg>
 )
 
-export const Squiggle = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 326 40" strokeWidth={1} {...base}>
-    <path d="M2 30 C 40 30, 52 12, 92 14 S 150 34, 196 26 S 270 6, 324 18" />
-    <circle cx="196" cy="26" r="2.5" />
-  </svg>
-)
-
 export const BatteryIcon = ({ level }: { level: number }) => (
   <svg width="22" height="11" viewBox="0 0 22 11" strokeWidth={1} {...base}>
     <rect x="0.5" y="0.5" width="18" height="10" rx="2.5" />
