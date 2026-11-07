@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -27,7 +27,7 @@ function fakeMpv() {
 
 const flush = () => new Promise((r) => setImmediate(r))
 
-async function setup(t, { stored, probe } = {}) {
+async function setup(t, { stored, probe, musicDir = MUSIC } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000 })
   const file = join(await mkdtemp(join(tmpdir(), 'calm-player-')), 'state.json')
   const store = createStore(file)
@@ -39,12 +39,12 @@ async function setup(t, { stored, probe } = {}) {
   const sinks = []
   const probes = []
   const player = createPlayer({
-    musicDir: MUSIC,
+    musicDir,
     store,
     mpv,
     probe: probe ?? (async (path) => (probes.push(path), { title: null, duration: 3 })),
     publish: (name, data) => (events[name] = data),
-    setSink: async (name) => sinks.push(name),
+    setSink: async (name) => (sinks.push(name), mpv.calls.push(['SINK', name])),
     sinks: SINKS,
   })
   await player.init()
@@ -131,12 +131,12 @@ test('seek clamps to the file length', async (t) => {
   assert.deepEqual(mpv.calls.at(-1), ['seek', 600, 'absolute'])
 })
 
-test('unplugging headphones pauses and switches to the speaker', async (t) => {
+test('unplugging headphones pauses first, then switches to the speaker', async (t) => {
   const { player, mpv, sinks } = await setup(t)
   await player.play(INTRO)
   mpv.emit('pause', false)
   await player.onHeadphones(false)
-  assert.deepEqual(mpv.calls.at(-1), ['set_property', 'pause', true])
+  assert.deepEqual(mpv.calls.slice(-2), [['set_property', 'pause', true], ['SINK', 'spk']])
   assert.equal(sinks.at(-1), 'spk')
 })
 
@@ -202,4 +202,86 @@ test('a missing audio output twice in a row stops paused with a quiet error', as
   assert.equal(mpv.loads().length, before)
   assert.equal(events.listen.playing, false)
   assert.match(events.listen.error, /no audio output/)
+})
+
+
+test('after mpv restarts, the active sink is selected again before reloading', async (t) => {
+  const { player, mpv } = await setup(t)
+  await player.onHeadphones(true)
+  await player.play(INTRO)
+  mpv.emit('exit')
+  mpv.emit('restart')
+  await flush()
+  const sinkAt = mpv.calls.findLastIndex((c) => c[0] === 'SINK' && c[1] === 'hp')
+  const loadAt = mpv.calls.findLastIndex((c) => c[0] === 'loadfile')
+  assert.ok(sinkAt > mpv.calls.findIndex((c) => c[0] === 'loadfile'), 'sink re-selected after the restart')
+  assert.ok(sinkAt < loadAt, 'sink selected before the reload')
+})
+
+test('a missing output while reloading paused retries paused', async (t) => {
+  const { player, mpv } = await setup(t)
+  t.mock.method(console, 'error', () => {})
+  await player.play(INTRO)
+  mpv.emit('exit')
+  mpv.emit('restart')
+  await flush()
+  mpv.emit('end-file', { reason: 'error', error: 'audio output initialization failed' })
+  t.mock.timers.tick(1_000)
+  await flush()
+  const pauses = mpv.calls.filter((c) => c[0] === 'set_property' && c[1] === 'pause')
+  assert.deepEqual(pauses.at(-1), ['set_property', 'pause', true])
+  assert.equal(player.isPlaying(), false)
+})
+
+test('a broken file during a paused reload skips to the next file, still paused', async (t) => {
+  const { player, mpv } = await setup(t)
+  t.mock.method(console, 'error', () => {})
+  await player.play(INTRO)
+  mpv.emit('exit')
+  mpv.emit('restart')
+  await flush()
+  mpv.emit('end-file', { reason: 'error', error: 'unrecognized file format' })
+  await flush()
+  assert.equal(mpv.lastLoad()[1], join(MUSIC, SECOND))
+  const pauses = mpv.calls.filter((c) => c[0] === 'set_property' && c[1] === 'pause')
+  assert.deepEqual(pauses.at(-1), ['set_property', 'pause', true])
+  assert.equal(player.isPlaying(), false)
+})
+
+test('pausing cancels a pending missing-output retry', async (t) => {
+  const { player, mpv } = await setup(t)
+  t.mock.method(console, 'error', () => {})
+  await player.play(INTRO)
+  mpv.emit('end-file', { reason: 'error', error: 'audio output initialization failed' })
+  await player.pause()
+  const before = mpv.loads().length
+  t.mock.timers.tick(1_000)
+  await flush()
+  assert.equal(mpv.loads().length, before)
+})
+
+test('an empty scan keeps every saved position', async (t) => {
+  const musicDir = await mkdtemp(join(tmpdir(), 'calm-music-'))
+  await cp(MUSIC, musicDir, { recursive: true })
+  const { player, store } = await setup(t, { musicDir, stored: { files: { [INTRO]: { position: 1234, lastPlayed: 5 } } } })
+  await rm(musicDir, { recursive: true })
+  await player.rescan()
+  assert.equal(store.data.files[INTRO].position, 1234)
+})
+
+test('end of file with mpv gone does not leave an unhandled rejection', async (t) => {
+  const { player, mpv } = await setup(t)
+  await player.play(INTRO)
+  t.mock.method(console, 'error', () => {})
+  mpv.command = async () => {
+    throw new Error('mpv: not running')
+  }
+  const rejections = []
+  const onRej = (e) => rejections.push(e)
+  process.on('unhandledRejection', onRej)
+  mpv.emit('end-file', { reason: 'eof' })
+  await flush()
+  await flush()
+  process.off('unhandledRejection', onRej)
+  assert.deepEqual(rejections, [])
 })

@@ -21,6 +21,7 @@ export function createMpv({ cmd, socketPath }) {
   let stopping = false
   let backoff = BACKOFF_MIN_MS
   let startedAt = 0
+  let spawnError = null
 
   async function start() {
     stopping = false
@@ -29,7 +30,13 @@ export function createMpv({ cmd, socketPath }) {
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     startedAt = Date.now()
+    spawnError = null
     child.stderr.on('data', (d) => console.error(`mpv: ${String(d).trim()}`))
+    // A missing binary emits 'error', not 'exit'; unhandled it would kill the daemon.
+    child.on('error', (err) => {
+      spawnError = err
+      console.error(`mpv: can't run ${bin}: ${err.message}`)
+    })
     child.on('exit', onExit)
     socket = await connectWithRetry()
     let buf = ''
@@ -55,7 +62,8 @@ export function createMpv({ cmd, socketPath }) {
         s.once('connect', () => resolve(s))
         s.once('error', () => {
           s.destroy()
-          if (Date.now() > deadline) reject(new Error(`mpv: no IPC socket at ${socketPath}`))
+          if (spawnError) reject(spawnError)
+          else if (Date.now() > deadline) reject(new Error(`mpv: no IPC socket at ${socketPath}`))
           else setTimeout(attempt, 50)
         })
       }

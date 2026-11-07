@@ -61,3 +61,17 @@ test('probe reads the title tag and duration', { skip }, async () => {
 test('probe of a broken file gives nulls', { skip }, async () => {
   assert.deepEqual(await probe(join(FIXTURES, 'broken.mp3')), { title: null, duration: null })
 })
+
+test('a missing mpv binary rejects start instead of crashing', async () => {
+  const socketPath = join(await mkdtemp(join(tmpdir(), 'calm-mpv-')), 'mpv.sock')
+  const mpv = createMpv({ cmd: '/nonexistent/mpv', socketPath })
+  const logged = []
+  const orig = console.error
+  console.error = (m) => logged.push(m)
+  try {
+    await assert.rejects(mpv.start())
+  } finally {
+    console.error = orig
+    await mpv.stop()
+  }
+})

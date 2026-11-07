@@ -209,7 +209,8 @@ function onInput(type, code, value) {
     return
   }
   if (kind === 'volup' || kind === 'voldown') audio.stepVolume(kind === 'volup' ? 1 : -1)
-  else if (kind === 'hp-in' || kind === 'hp-out') player.onHeadphones(kind === 'hp-in')
+  else if (kind === 'hp-in' || kind === 'hp-out')
+    player.onHeadphones(kind === 'hp-in').catch((err) => console.error(`listen: ${err.message}`))
   if (kind && screenOn) armIdle()
 }
 
@@ -379,6 +380,9 @@ watchInput()
   }
   await player.init()
 })().catch((err) => console.error(`listen: init failed: ${err.message}`))
+
+// Last resort: a stray rejection must not take the whole phone UI down.
+process.on('unhandledRejection', (err) => console.error(`unhandled: ${err?.stack ?? err}`))
 
 // tinydm restarts send SIGTERM: save positions first, never lose a book.
 // Then re-raise the signal instead of process.exit(): exit joins the libuv

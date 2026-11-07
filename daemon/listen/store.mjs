@@ -9,25 +9,27 @@ const empty = () => ({ version: 1, current: null, files: {}, probes: {} })
 export function createStore(file) {
   const store = { data: empty(), load, save }
   let chain = Promise.resolve()
+  // Until load() has run, data is empty: saving it would wipe every position.
+  let loaded = false
 
   async function load() {
-    let text
+    store.data = parse(await readFile(file, 'utf8').catch(() => null))
+    loaded = true
+  }
+
+  function parse(text) {
+    if (text === null) return empty()
     try {
-      text = await readFile(file, 'utf8')
-    } catch {
-      store.data = empty()
-      return
-    }
-    try {
-      store.data = { ...empty(), ...JSON.parse(text) }
+      return { ...empty(), ...JSON.parse(text) }
     } catch (err) {
       console.error(`listen: ignoring unreadable ${file} (${err.message})`)
-      store.data = empty()
+      return empty()
     }
   }
 
   // Serialized so two writers never share the temp file; each writes the latest data.
   function save() {
+    if (!loaded) return chain
     chain = chain.then(write, write)
     return chain
   }

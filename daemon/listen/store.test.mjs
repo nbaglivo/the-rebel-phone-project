@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -54,4 +54,14 @@ test('save creates missing parent directories', async () => {
   await store.load()
   await store.save()
   assert.deepEqual(await readdir(join(dir, 'a', 'b')), ['state.json'])
+})
+
+test('save before load never overwrites the file on disk', async () => {
+  const dir = await tmp()
+  const file = join(dir, 'state.json')
+  await writeFile(file, JSON.stringify({ version: 1, current: 'a.mp3', files: { 'a.mp3': { position: 1234, lastPlayed: 1 } }, probes: {} }))
+  const store = createStore(file)
+  await store.save()
+  const saved = JSON.parse(await readFile(file, 'utf8'))
+  assert.equal(saved.files['a.mp3'].position, 1234)
 })

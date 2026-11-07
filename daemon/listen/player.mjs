@@ -7,6 +7,7 @@ import { displayOrder, displayTitle, folderOf, nextId, scanMusic, startPosition 
 const SAVE_EVERY_MS = 5_000
 const ERROR_SHOWN_MS = 5_000
 const BACK_S = 30
+const logError = (err) => console.error(`listen: ${err.message}`)
 // PulseAudio autospawns on demand; mpv can ask before it is ready.
 const NO_OUTPUT = /audio output initialization failed/i
 const OUTPUT_RETRY_MS = 1_000
@@ -23,6 +24,9 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
   let errorTimer
   let lastPublished = 0
   let outputRetried = null // id already retried after a missing audio output
+  let retryTimer
+  let autoplayIntent = false // whether the last load meant to play
+  let sink = sinks.speaker
 
   const files = () => store.data.files
   const saved = (id) => files()[id] ?? { position: 0, lastPlayed: null }
@@ -62,8 +66,11 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
       }
       next.set(f.id, { id: f.id, title: displayTitle(f.id, p.title), folder: folderOf(f.id), duration: p.duration })
     }
-    for (const id of Object.keys(store.data.probes)) if (!next.has(id)) delete store.data.probes[id]
-    for (const id of Object.keys(files())) if (!next.has(id)) delete files()[id]
+    // An empty scan is more likely a missing ~/Music than a deliberate wipe: keep positions.
+    if (next.size > 0) {
+      for (const id of Object.keys(store.data.probes)) if (!next.has(id)) delete store.data.probes[id]
+      for (const id of Object.keys(files())) if (!next.has(id)) delete files()[id]
+    }
     entries = next
     if (!current || !entries.has(current)) {
       if (current && loaded === current) await stopPlayback()
@@ -96,6 +103,7 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
     if (autoplay) remember(id, { lastPlayed: now() })
     loaded = id
     playing = autoplay
+    autoplayIntent = autoplay
     await mpv.command('set_property', 'pause', !autoplay)
     await mpv.command('loadfile', join(musicDir, id), 'replace', -1, `start=${start}`)
     publishLibrary()
@@ -109,8 +117,14 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
     await mpv.command('stop').catch(() => {})
   }
 
+  function cancelRetry() {
+    clearTimeout(retryTimer)
+    retryTimer = undefined
+  }
+
   async function play(id) {
     outputRetried = null
+    cancelRetry()
     if (id && id !== current) return load(id, 'resume', true)
     if (!current) return
     if (loaded !== current) return load(current, 'resume', true)
@@ -122,6 +136,7 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
   }
 
   async function pause() {
+    cancelRetry()
     playing = false
     if (loaded) await mpv.command('set_property', 'pause', true)
     if (current) remember(current, { position })
@@ -130,6 +145,7 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
   }
 
   async function seek(to) {
+    cancelRetry()
     if (!current) return
     const duration = entries.get(current)?.duration
     const target = Math.max(0, duration != null ? Math.min(to, duration) : to)
@@ -145,9 +161,10 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
   const restart = () => seek(0)
 
   /** Advance to the next file by name; at the end of the list, stop paused. */
-  async function next() {
+  async function next(autoplay = true) {
+    cancelRetry()
     const id = current && nextId([...entries.keys()], current)
-    if (id) return load(id, 'advance', true)
+    if (id) return load(id, 'advance', autoplay)
     await stopPlayback()
     publishListen()
     await save()
@@ -162,9 +179,12 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
     }, ERROR_SHOWN_MS)
   }
 
+  // Pause before switching to the speaker, so nothing escapes into a pocket.
   async function onHeadphones(inserted) {
-    await setSink(inserted ? sinks.headphones : sinks.speaker)
+    cancelRetry()
     if (!inserted && playing) await pause()
+    sink = inserted ? sinks.headphones : sinks.speaker
+    await setSink(sink)
   }
 
   async function flush() {
@@ -204,7 +224,7 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
       remember(id, { position: 0 })
       position = 0
       loaded = null
-      next()
+      next().catch(logError)
     } else if (reason === 'error' && NO_OUTPUT.test(why ?? '')) {
       // Not the file's fault: try the same file once more, then give up quietly.
       console.error(`listen: no audio output for ${id}: ${why}`)
@@ -217,15 +237,17 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
         return
       }
       outputRetried = id
-      setTimeout(() => {
-        load(id, 'resume', true).catch((err) => console.error(err.message))
+      const autoplay = autoplayIntent
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined
+        if (current === id) load(id, 'resume', autoplay).catch(logError)
       }, OUTPUT_RETRY_MS)
     } else if (reason === 'error') {
       const title = entries.get(id)?.title ?? id
       console.error(`listen: can't play ${id}: ${why ?? 'unknown error'}`)
       loaded = null
       showError(`can't play ${title}`)
-      next()
+      next(autoplayIntent).catch(logError)
     }
   })
 
@@ -236,8 +258,12 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
     save()
   })
 
+  // A new mpv starts on PulseAudio's default sink, the silent loopback: select ours first.
   mpv.on('restart', () => {
-    if (current) load(current, 'resume', false).catch((err) => console.error(err.message))
+    if (!current) return
+    setSink(sink)
+      .then(() => load(current, 'resume', false))
+      .catch(logError)
   })
 
   setInterval(() => {
