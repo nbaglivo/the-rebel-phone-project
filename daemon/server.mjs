@@ -117,6 +117,7 @@ let changedAt = 0
 let idleTimer
 let blankSuspendTimer
 let canWake = false
+let switching = false // one transition at a time: the off path awaits sysfs
 
 function armIdle() {
   clearTimeout(idleTimer)
@@ -130,10 +131,20 @@ function suspend() {
 }
 
 async function setScreen(on, reason = 'power') {
-  if (on === screenOn) return
+  if (on === screenOn || switching) return
   // Never sleep without an input device to notice the wake-up press.
   if (!on && !canWake) return
+  switching = true
+  try {
+    await switchScreen(on, reason)
+  } finally {
+    switching = false
+  }
+}
+
+async function switchScreen(on, reason) {
   if (on) {
+    console.error(`screen: on (${reason}${blanked ? ', was blanked' : ''})`)
     screenOn = true
     changedAt = Date.now()
     clearTimeout(blankSuspendTimer)
@@ -143,7 +154,10 @@ async function setScreen(on, reason = 'power') {
     publish('screen', { on: true })
     return armIdle()
   }
-  const decision = decideScreenOff({ reason, playing: player.isPlaying(), usb: await usbOnline(POWER_SUPPLY_DIR) })
+  const playing = player.isPlaying()
+  const usb = await usbOnline(POWER_SUPPLY_DIR)
+  const decision = decideScreenOff({ reason, playing, usb })
+  console.error(`screen: off requested (${reason}, playing=${playing}, usb=${usb}) → ${decision}`)
   if (decision === 'stay') return armIdle()
   screenOn = false
   changedAt = Date.now()
@@ -181,7 +195,7 @@ function checkBlanked() {
 let lastTick = Date.now()
 setInterval(() => {
   const now = Date.now()
-  if (now - lastTick > 5_000) setScreen(true)
+  if (now - lastTick > 5_000) setScreen(true, 'woke up')
   lastTick = now
   checkBlanked()
 }, 1_000).unref()
@@ -357,6 +371,7 @@ watchInput()
 // Not awaited: probing a large library on first run must not delay the shell.
 ;(async () => {
   try {
+    audio.keepServerAlive()
     await mpv.start()
     await audio.setSink(SPEAKER_SINK)
   } catch (err) {

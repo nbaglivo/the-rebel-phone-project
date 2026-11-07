@@ -7,6 +7,9 @@ import { displayOrder, displayTitle, folderOf, nextId, scanMusic, startPosition 
 const SAVE_EVERY_MS = 5_000
 const ERROR_SHOWN_MS = 5_000
 const BACK_S = 30
+// PulseAudio autospawns on demand; mpv can ask before it is ready.
+const NO_OUTPUT = /audio output initialization failed/i
+const OUTPUT_RETRY_MS = 1_000
 
 export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, sinks, now = () => Date.now() }) {
   /** id → { id, title, folder, duration }, in path order. */
@@ -19,6 +22,7 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
   let error = null
   let errorTimer
   let lastPublished = 0
+  let outputRetried = null // id already retried after a missing audio output
 
   const files = () => store.data.files
   const saved = (id) => files()[id] ?? { position: 0, lastPlayed: null }
@@ -106,6 +110,7 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
   }
 
   async function play(id) {
+    outputRetried = null
     if (id && id !== current) return load(id, 'resume', true)
     if (!current) return
     if (loaded !== current) return load(current, 'resume', true)
@@ -200,6 +205,21 @@ export function createPlayer({ musicDir, store, mpv, probe, publish, setSink, si
       position = 0
       loaded = null
       next()
+    } else if (reason === 'error' && NO_OUTPUT.test(why ?? '')) {
+      // Not the file's fault: try the same file once more, then give up quietly.
+      console.error(`listen: no audio output for ${id}: ${why}`)
+      loaded = null
+      if (outputRetried === id) {
+        outputRetried = null
+        playing = false
+        showError('no audio output')
+        publishListen()
+        return
+      }
+      outputRetried = id
+      setTimeout(() => {
+        load(id, 'resume', true).catch((err) => console.error(err.message))
+      }, OUTPUT_RETRY_MS)
     } else if (reason === 'error') {
       const title = entries.get(id)?.title ?? id
       console.error(`listen: can't play ${id}: ${why ?? 'unknown error'}`)

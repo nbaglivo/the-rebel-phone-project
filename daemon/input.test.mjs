@@ -7,9 +7,10 @@ test('power key press is power', () => {
   assert.equal(classifyInput(1, 116, 0), null)
 })
 
-test('volume keys step on press and auto-repeat, not release', () => {
+test('volume keys step once per press, not on auto-repeat or release', () => {
   assert.equal(classifyInput(1, 115, 1), 'volup')
-  assert.equal(classifyInput(1, 114, 2), 'voldown')
+  assert.equal(classifyInput(1, 114, 1), 'voldown')
+  assert.equal(classifyInput(1, 114, 2), null)
   assert.equal(classifyInput(1, 115, 0), null)
 })
 

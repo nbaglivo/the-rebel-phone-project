@@ -174,3 +174,32 @@ test('a rescan with unchanged files does not probe again', async (t) => {
   await player.rescan()
   assert.equal(probes.length, first)
 })
+
+test('a missing audio output is retried once, not treated as a broken file', async (t) => {
+  const { player, mpv, events } = await setup(t)
+  t.mock.method(console, 'error', () => {})
+  await player.play(INTRO)
+  const before = mpv.loads().length
+  mpv.emit('end-file', { reason: 'error', error: 'audio output initialization failed' })
+  await flush()
+  assert.equal(events.listen.error, null)
+  t.mock.timers.tick(1_000)
+  await flush()
+  assert.equal(mpv.loads().length, before + 1)
+  assert.equal(mpv.lastLoad()[1], join(MUSIC, INTRO))
+})
+
+test('a missing audio output twice in a row stops paused with a quiet error', async (t) => {
+  const { player, mpv, events } = await setup(t)
+  t.mock.method(console, 'error', () => {})
+  await player.play(INTRO)
+  mpv.emit('end-file', { reason: 'error', error: 'audio output initialization failed' })
+  t.mock.timers.tick(1_000)
+  await flush()
+  const before = mpv.loads().length
+  mpv.emit('end-file', { reason: 'error', error: 'audio output initialization failed' })
+  await flush()
+  assert.equal(mpv.loads().length, before)
+  assert.equal(events.listen.playing, false)
+  assert.match(events.listen.error, /no audio output/)
+})

@@ -12,9 +12,9 @@ const SW_HEADPHONE_INSERT = 2
 export function classifyInput(type, code, value) {
   if (type === EV_KEY) {
     if (code === KEY_POWER) return value === 1 ? 'power' : null
-    // 1 = press, 2 = auto-repeat while held, 0 = release.
-    if (code === KEY_VOLUMEUP) return value ? 'volup' : null
-    if (code === KEY_VOLUMEDOWN) return value ? 'voldown' : null
+    // One step per press (1); auto-repeat (2) jumps tens of percent in a blink.
+    if (code === KEY_VOLUMEUP) return value === 1 ? 'volup' : null
+    if (code === KEY_VOLUMEDOWN) return value === 1 ? 'voldown' : null
     return 'activity'
   }
   if (type === EV_SW && code === SW_HEADPHONE_INSERT) return value ? 'hp-in' : 'hp-out'

@@ -1,7 +1,7 @@
 // Output sink and volume. On the phone PulseAudio's default sink is the silent
 // snd_aloop loopback, so the sink is always chosen explicitly (docs/device.md).
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 
 export const SPEAKER_SINK = process.env.SPEAKER_SINK ?? 'alsa_output.platform-sound.HiFi__Speaker__sink'
 export const HEADPHONES_SINK = process.env.HEADPHONES_SINK ?? 'alsa_output.platform-sound.HiFi__Headphones__sink'
@@ -37,5 +37,19 @@ export function createAudio({ mpv, pactl = 'pactl' }) {
     }
   }
 
-  return { setSink, stepVolume, activeSink: () => active }
+  // PulseAudio exits after 20 s without clients (exit-idle-time) and the next
+  // play races its autospawn. One idle `pactl subscribe` client keeps it up.
+  function keepServerAlive() {
+    let missing = false
+    const child = spawn(pactl, ['subscribe'], { stdio: 'ignore' })
+    child.on('error', (err) => {
+      missing = true
+      console.error(`audio: can't keep PulseAudio up: ${err.message}`)
+    })
+    child.on('exit', () => {
+      if (!missing) setTimeout(keepServerAlive, 5_000).unref()
+    })
+  }
+
+  return { setSink, stepVolume, keepServerAlive, activeSink: () => active }
 }
