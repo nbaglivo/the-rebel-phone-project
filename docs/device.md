@@ -82,6 +82,22 @@ wins and the image's own `/etc/doas.d/` rules would otherwise override them.
 
 ## Gotchas we already hit
 
+- **Daemon logs** are in `~/.local/state/tinydm.log` (with cage and
+  Chromium), not in the journal. `grep -E '^(screen|listen|audio|mpv):'`
+  picks out the daemon's lines; every screen-off decision is logged with its
+  reason, `playing` and `usb`.
+- **PulseAudio exits after 20 s idle** (`exit-idle-time = 20`) and the next
+  client races its autospawn: mpv then fails with "audio output
+  initialization failed". The daemon keeps one `pactl subscribe` client
+  running so it stays up.
+- **USB networking drops for up to a minute** after `systemctl restart
+  tinydm` (each deploy): SSH times out meanwhile; wait and retry.
+- **Backlight** (`/sys/class/backlight/ae94000.dsi.0/brightness`, max 512 in
+  use) is `root:video 664` and `user` is in `video`: the daemon can write it
+  without a udev rule.
+- **USB power** shows as `pmi8998-charger` (`type=USB`, `online`).
+- Node on the phone is 24.x and has `node:sqlite`.
+
 - **No sound although mpv says it's playing**: PulseAudio (not PipeWire) is
   what actually serves audio here — it autospawns on the first client — and
   its default sink is `alsa_output.platform-snd_aloop.0.analog-stereo`, a

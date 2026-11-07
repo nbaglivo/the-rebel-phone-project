@@ -35,4 +35,4 @@ ssh "$PHONE" '[ "$(readlink /usr/local/bin/calm-session)" = /opt/calm-daemon/cal
 
 ssh "$PHONE" 'doas systemctl restart tinydm || doas systemctl start tinydm'
 
-echo "Deployed. Logs: ssh $PHONE 'journalctl -u tinydm -b -f'"
+echo "Deployed. Logs: ssh $PHONE 'tail -f ~/.local/state/tinydm.log'"

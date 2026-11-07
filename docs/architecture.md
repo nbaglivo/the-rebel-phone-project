@@ -131,7 +131,7 @@ Planned: `brightness { level }`, `call { number }`, `call/hangup`,
 2. Fixtures in `daemon/fixtures/` for running without the phone. ✓
 3. Brightness (sysfs read + write action). ← next
 4. Power button / suspend (`/dev/input`, logind). Idle and power key
-   suspend ✓; still to do: wake for calls/SMS (modem), keep awake for
-   calls and music.
+   suspend ✓; keep awake while playing (blank instead) and on USB ✓;
+   still to do: wake for calls/SMS (modem), keep awake for calls.
 5. Modem: calls + SMS via ModemManager (`dbus-next`).
 6. Switch battery to UPower signals (no polling).

@@ -40,7 +40,8 @@ local Node daemon ⇄ the system (sysfs files, D-Bus services).
 - Privilege: **`doas`, not `sudo`**. Init: **systemd**. Packages: **`apk`**.
 - Session: `tinydm` → `/usr/local/bin/calm-session` (symlink to the deployed
   `daemon/calm-session`) → `cage` → Chromium kiosk.
-- Logs: `journalctl -u tinydm -b`; daemon output goes to the same journal.
+- Logs: the session (cage, Chromium, the daemon's stdout/stderr) writes to
+  `~/.local/state/tinydm.log`; `journalctl -u tinydm -b` only has systemd's lines.
 
 ## Verifying work
 
