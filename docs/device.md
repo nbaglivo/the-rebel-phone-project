@@ -107,6 +107,41 @@ key. Files are published once they haven't changed for 10 s.
 - Status: `launchctl print gui/$(id -u)/dev.rebelphone.syncd | grep state`
 - Stop: `launchctl bootout gui/$(id -u)/dev.rebelphone.syncd`
 
+### Phone
+
+`calm-syncd` (systemd, runs as `user`, starts at boot) pulls into `~/Music`
+with `PUSH=0 ATOMIC=1 WIPE_GUARD=1`; `./scripts/deploy.sh` updates and
+restarts it. One-time setup (needs the doas password, so run it in a real
+terminal, not via `!`):
+
+```sh
+scp scripts/calm-syncd.service user@172.16.42.1:/tmp/
+ssh user@172.16.42.1 'install -d ~/.config/syncd ~/.local/share/syncd ~/.local/state/syncd'
+ssh -t user@172.16.42.1 doas sh -c '"apk add npm rsync &&
+  install -d -o user -g user /opt/calm-syncd &&
+  install -o user -g user -m 644 /tmp/calm-syncd.service /opt/calm-syncd/ &&
+  systemctl link /opt/calm-syncd/calm-syncd.service && systemctl enable calm-syncd &&
+  printf \"%s\n\" \"permit nopass user as root cmd systemctl args daemon-reload\"
+    \"permit nopass user as root cmd systemctl args restart calm-syncd\" >> /etc/doas.d/zz-calm.conf"'
+```
+
+- Code: `/opt/calm-syncd` (+ `node_modules`, installed on the phone by deploy
+  when `package-lock.json` changes)
+- Config: `~/.config/syncd/env` (`PEER_KEY=<mac key>`)
+- Storage (keep it): `~/.local/share/syncd`
+- Status (read by the daemon): `~/.local/state/syncd/status.json`
+- Logs: `journalctl -u calm-syncd -f`
+
+**Native addons are built for musl on the Mac.** syncd's addons
+(`rocksdb-native`, `sodium-native`, `udx-native`, …) only ship glibc
+prebuilds; postmarketOS is musl. `gcompat` is not enough (`rocksdb-native`
+segfaults). `scripts/build-musl-addons.sh` (called by deploy) builds each
+`name@version` from syncd's lockfile in an arm64 Alpine container (Docker),
+caches it in `.cache/musl-addons/`, and deploy copies it to
+`node_modules/<name>/prebuilds/linux-arm64-musl/` and checks it loads. A syncd
+dependency bump therefore needs Docker for one deploy; recipe and the two
+header-drift fixes: `scripts/musl/build-addon.sh`.
+
 ### Pairing
 
 1. Put at least one file in the Mac folder (an empty Mac folder is refused
