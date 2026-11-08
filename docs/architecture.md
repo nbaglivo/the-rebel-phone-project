@@ -27,6 +27,7 @@
 2. Hold the current phone state in memory and push changes over SSE.
 3. Accept actions from the shell and perform them on the system.
 4. Later: host the P2P sync core (Hypercore/Holepunch) for local-first apps.
+   Music sync already uses it, as a separate service: see "Music sync" below.
 
 Config via env vars (with phone defaults), so it runs on the Mac against fixtures:
 
@@ -47,6 +48,16 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `SYNC_STATUS_FILE` | `~/.local/state/syncd/status.json` (written by syncd) |
 | `SPEAKER_SINK`     | `alsa_output.platform-sound.HiFi__Speaker__sink` |
 | `HEADPHONES_SINK`  | `alsa_output.platform-sound.HiFi__Headphones__sink` |
+
+## Music sync
+
+[syncd](https://github.com/nbaglivo/syncd) (`vendor/syncd`) runs next to the
+daemon, not inside it, as the `calm-syncd` systemd service. It pulls the Mac's
+published folder into `MUSIC_DIR` one way (Hyperswarm, so any network), writing
+each file as `*.localdrive.tmp` and renaming it when complete. The daemon only
+reads files: it rescans the library when `MUSIC_DIR` changes and reads syncd's
+status file to keep the phone awake (blanked) while a pull is running. No UI;
+logs in `journalctl -u calm-syncd`. Setup: `docs/device.md` → "Music sync".
 
 ## Event contract (`GET /events`, server-sent events)
 
