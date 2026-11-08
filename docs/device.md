@@ -80,6 +80,41 @@ Only (re)starting tinydm is passwordless; everything else still asks. The
 doas rules go in `/etc/doas.d/zz-calm.conf` because the last matching rule
 wins and the image's own `/etc/doas.d/` rules would otherwise override them.
 
+## Music sync (syncd)
+
+Music and audiobooks come from a folder on the Mac through
+[syncd](https://github.com/nbaglivo/syncd) (vendored at `vendor/syncd`), one
+way: the Mac publishes, the phone pulls into `~/Music`, and deletes follow.
+Design: `docs/superpowers/specs/2026-11-08-sync-design.md`.
+
+### Mac
+
+```sh
+git submodule update --init
+./scripts/mac/install-syncd.sh            # publishes ~/Phone/Music
+./scripts/mac/install-syncd.sh ~/Other    # or another folder
+```
+
+It installs a launchd agent (`dev.rebelphone.syncd`, starts at login,
+restarted if it dies) and prints the Mac's drive key. Re-run it after
+updating the submodule or changing the node version in mise (the agent pins
+node's absolute path, since launchd has no mise shims). Same storage, same
+key. Files are published once they haven't changed for 10 s.
+
+- Code: `~/Library/Application Support/syncd/app`
+- Storage (holds the key, keep it): `~/Library/Application Support/syncd/storage`
+- Log: `~/Library/Logs/syncd.log`
+- Status: `launchctl print gui/$(id -u)/dev.rebelphone.syncd | grep state`
+- Stop: `launchctl bootout gui/$(id -u)/dev.rebelphone.syncd`
+
+### Pairing
+
+1. Put at least one file in the Mac folder (an empty Mac folder is refused
+   by the phone's wipe guard).
+2. On the phone: `printf 'PEER_KEY=%s\n' <mac key> > ~/.config/syncd/env`,
+   then `doas systemctl restart calm-syncd`.
+3. The first sync replaces whatever is in the phone's `~/Music`.
+
 ## Gotchas we already hit
 
 - **Daemon logs** are in `~/.local/state/tinydm.log` (with cage and
