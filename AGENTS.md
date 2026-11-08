@@ -1,4 +1,4 @@
-# Calm phone shell
+# The Rebel Phone Project
 
 A minimal, "calm" phone UI (Light Phone–like) written in React, running as the
 entire user interface of a OnePlus 6 (`oneplus-enchilada`) on postmarketOS.

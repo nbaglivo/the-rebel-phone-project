@@ -1,4 +1,4 @@
-// Calm shell daemon: serves the built shell and owns all system access.
+// The Rebel Phone Project daemon: serves the built shell and owns all system access.
 // Zero dependencies. Contract: docs/architecture.md.
 
 // Each open /dev/input device parks a libuv pool thread in a blocking read();
@@ -396,5 +396,5 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`calm daemon on http://${HOST}:${PORT} (static: ${STATIC_DIR}, power: ${POWER_SUPPLY_DIR}, music: ${MUSIC_DIR})`)
+  console.log(`rebel phone daemon on http://${HOST}:${PORT} (static: ${STATIC_DIR}, power: ${POWER_SUPPLY_DIR}, music: ${MUSIC_DIR})`)
 })
