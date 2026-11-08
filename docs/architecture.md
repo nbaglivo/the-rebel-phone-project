@@ -44,6 +44,7 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `STATE_FILE`       | `~/.local/state/calm/listen.json` (outside `/opt/calm-daemon`: deploy wipes it) |
 | `MPV_CMD`          | `mpv` (Mac tests: `mpv --ao=null`) |
 | `FFPROBE_CMD`      | `ffprobe`                  |
+| `SYNC_STATUS_FILE` | `~/.local/state/syncd/status.json` (written by syncd) |
 | `SPEAKER_SINK`     | `alsa_output.platform-sound.HiFi__Speaker__sink` |
 | `HEADPHONES_SINK`  | `alsa_output.platform-sound.HiFi__Headphones__sink` |
 
@@ -90,11 +91,15 @@ back to sleep. If no input device can be opened it never suspends.
 While `screen.on` is false the shell covers itself with `.screen-off`, so
 the screen looks off immediately and stray touches go nowhere.
 
-Suspend stops audio, so `daemon/power.mjs` decides how the screen goes off:
+Suspend stops audio and network, so `daemon/power.mjs` decides how the screen
+goes off:
 
-- **Playing** (idle or power key): **blank** — `screen: { on: false }`,
+- **Playing or syncing** (idle or power key): **blank** — `screen: { on: false }`,
   backlight to 0 (`BACKLIGHT_DIR`), no suspend. Only the power key unblanks.
-  If playback stops while blanked, it suspends after `IDLE_MS`.
+  When both have stopped while blanked, it suspends after `IDLE_MS`.
+  "Syncing" = syncd's status file (`SYNC_STATUS_FILE`) says `"syncing": true`
+  and was written in the last 2 minutes (`daemon/sync.mjs`), so a crashed or
+  stalled syncd can't keep the phone awake.
 - **On USB or mains power** (any `POWER_SUPPLY_DIR` supply of type `USB` or
   `Mains` with `online == 1`): idle never turns the screen off; the power key
   still does.

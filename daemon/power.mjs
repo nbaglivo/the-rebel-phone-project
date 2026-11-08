@@ -1,15 +1,16 @@
-// When the screen should go off, and how: suspend, or just blank so audio keeps playing.
+// When the screen should go off, and how: suspend, or just blank so audio and sync keep going.
 
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /**
- * Suspend stops audio, so while something plays the screen only blanks.
+ * Suspend stops audio and network, so while something plays or syncd is
+ * pulling, the screen only blanks.
  * Idle never turns the screen off while on USB power; the power key still does.
  */
-export function decideScreenOff({ reason, playing, usb }) {
+export function decideScreenOff({ reason, playing, usb, syncing = false }) {
   if (reason === 'idle' && usb) return 'stay'
-  return playing ? 'blank' : 'suspend'
+  return playing || syncing ? 'blank' : 'suspend'
 }
 
 const read = (path) => readFile(path, 'utf8').then((s) => s.trim(), () => null)

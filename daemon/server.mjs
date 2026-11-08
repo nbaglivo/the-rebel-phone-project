@@ -14,6 +14,7 @@ import { createActions } from './actions.mjs'
 import { createBacklight } from './backlight.mjs'
 import { classifyInput } from './input.mjs'
 import { decideScreenOff, usbOnline } from './power.mjs'
+import { createSyncStatus } from './sync.mjs'
 import { SPEAKER_SINK, HEADPHONES_SINK, createAudio } from './audio.mjs'
 import { createMpv } from './listen/mpv.mjs'
 import { createPlayer } from './listen/player.mjs'
@@ -33,6 +34,7 @@ const MUSIC_DIR = process.env.MUSIC_DIR ?? '/home/user/Music'
 const STATE_FILE = process.env.STATE_FILE ?? join(homedir(), '.local/state/calm/listen.json')
 const MPV_CMD = process.env.MPV_CMD ?? 'mpv'
 const FFPROBE_CMD = process.env.FFPROBE_CMD ?? 'ffprobe'
+const SYNC_STATUS_FILE = process.env.SYNC_STATUS_FILE ?? join(homedir(), '.local/state/syncd/status.json')
 
 // ---------- State + SSE ----------
 
@@ -102,8 +104,9 @@ async function pollBattery() {
 
 // cage can't power the display off (no wlr-output-power-management), so screen
 // off means suspend: s2idle powers the panel down along with everything else.
-// Suspend stops audio, so while something plays the screen only blanks
-// (backlight 0 + the shell's cover) and the phone stays awake.
+// Suspend stops audio and network, so while something plays or syncd is
+// pulling the screen only blanks (backlight 0 + the shell's cover) and the
+// phone stays awake.
 
 // struct input_event on 64-bit: timeval (16), type u16, code u16, value s32.
 const EVENT_SIZE = 24
@@ -118,6 +121,8 @@ let idleTimer
 let blankSuspendTimer
 let canWake = false
 let switching = false // one transition at a time: the off path awaits sysfs
+const syncStatus = createSyncStatus(SYNC_STATUS_FILE)
+const busy = async () => player.isPlaying() || (await syncStatus.isSyncing())
 
 function armIdle() {
   clearTimeout(idleTimer)
@@ -155,9 +160,10 @@ async function switchScreen(on, reason) {
     return armIdle()
   }
   const playing = player.isPlaying()
+  const syncing = await syncStatus.isSyncing()
   const usb = await usbOnline(POWER_SUPPLY_DIR)
-  const decision = decideScreenOff({ reason, playing, usb })
-  console.error(`screen: off requested (${reason}, playing=${playing}, usb=${usb}) → ${decision}`)
+  const decision = decideScreenOff({ reason, playing, usb, syncing })
+  console.error(`screen: off requested (${reason}, playing=${playing}, syncing=${syncing}, usb=${usb}) → ${decision}`)
   if (decision === 'stay') return armIdle()
   screenOn = false
   changedAt = Date.now()
@@ -171,17 +177,18 @@ async function switchScreen(on, reason) {
   }
 }
 
-// Blanked and playback stopped (pause, unplug, end of list): sleep after IDLE_MS,
-// unless something plays again or the power key comes first.
-function checkBlanked() {
+// Blanked and nothing keeps it awake any more (playback stopped, sync done):
+// sleep after IDLE_MS, unless something plays or syncs again, or the power key
+// comes first.
+async function checkBlanked() {
   if (!blanked || IDLE_MS <= 0) return
-  if (player.isPlaying()) {
+  if (await busy()) {
     clearTimeout(blankSuspendTimer)
     blankSuspendTimer = undefined
   } else if (!blankSuspendTimer) {
     blankSuspendTimer = setTimeout(async () => {
       blankSuspendTimer = undefined
-      if (!blanked || player.isPlaying()) return
+      if (!blanked || (await busy())) return
       if (decideScreenOff({ reason: 'idle', playing: false, usb: await usbOnline(POWER_SUPPLY_DIR) }) !== 'suspend') return
       blanked = false
       await backlight.restore()
@@ -197,7 +204,7 @@ setInterval(() => {
   const now = Date.now()
   if (now - lastTick > 5_000) setScreen(true, 'woke up')
   lastTick = now
-  checkBlanked()
+  checkBlanked().catch((err) => console.error(`screen: ${err.message}`))
 }, 1_000).unref()
 
 // Only the power key wakes the screen; touches while off are ignored (pocket).
