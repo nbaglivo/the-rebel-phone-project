@@ -19,6 +19,7 @@ import { SPEAKER_SINK, HEADPHONES_SINK, createAudio } from './audio.mjs'
 import { createMpv } from './listen/mpv.mjs'
 import { createPlayer } from './listen/player.mjs'
 import { probe } from './listen/probe.mjs'
+import { watchLibrary } from './listen/watch.mjs'
 import { createStore } from './listen/store.mjs'
 
 const HOST = '127.0.0.1'
@@ -386,6 +387,8 @@ watchInput()
     console.error(`listen: mpv didn't start (${err.message}); playback is unavailable`)
   }
   await player.init()
+  // syncd (or anything else) changing ~/Music shows up without a manual rescan.
+  await watchLibrary(MUSIC_DIR, () => player.rescan())
 })().catch((err) => console.error(`listen: init failed: ${err.message}`))
 
 // Last resort: a stray rejection must not take the whole phone UI down.

@@ -60,7 +60,7 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `battery`  | `{ level: 0-100 \| null, status: "Charging"\|"Discharging"\|"Full"\|"Not charging" \| null }` | sysfs `type == Battery` → `capacity`, `status` (later: UPower signals) |
 | `screen`   | `{ on: boolean }` | `false` while suspending or suspended, see below |
 | `listen`   | `{ current: { id, title, folder, duration } \| null, playing, position, positionAt, error: string \| null }` | the player (`daemon/listen/`); sent on changes and at most every 5 s while playing — the shell interpolates from `positionAt` (ms) |
-| `library`  | `[{ id, title, folder, duration, position, lastPlayed }]`, recently played first, then unplayed by title | scan of `MUSIC_DIR` (`id` = path relative to it) |
+| `library`  | `[{ id, title, folder, duration, position, lastPlayed }]`, recently played first, then unplayed by title | scan of `MUSIC_DIR` (`id` = path relative to it), rescanned 3 s after files there stop changing (`*.localdrive.tmp` ignored) |
 
 ### Listen
 
