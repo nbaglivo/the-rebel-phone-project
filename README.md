@@ -4,41 +4,79 @@
 
 # The Rebel Phone Project
 
-A minimal phone shell: time and day, and five apps — call, messages, notes, listen, read.
-Visual language from nbaglivo.dev: warm paper, warm ink, IBM Plex Sans Light + Plex Mono, thin line drawings.
+An attempt to break free from the attention and data stealers that govern
+phone technology.
+
+This is a phone where I'm in charge of everything. I decide what it does,
+what it shows me, where my data goes and where my attention goes. Nothing on
+it was designed to keep me scrolling or to harvest what I do. It's about
+sovereignty: owning the device in my pocket instead of renting my attention
+to it.
 
 <p align="center">
-  <img src="docs/images/oneplus6-home.png" alt="Home screen on a OnePlus 6: date, battery, large clock on kraft paper, and the five apps listed below" width="360">
+  <img src="docs/images/oneplus6-home.png" alt="Home screen on a OnePlus 6: date, battery, large clock on kraft paper, and the apps listed below" width="360">
 </p>
 
-React 19 + Vite + TypeScript. No router or UI library. Fonts are self-hosted (`@fontsource`), so it runs offline.
+## Not a product
+
+This isn't meant to be a generic alternative for everybody. It's personal
+software, and an experiment to see how far I can go, both technically and
+socially: living at the edge of the hyperconnected world. I hope it inspires
+others. It also gives proof, and knowledge, of how hard this actually is.
+
+## The real output: agent instructions
+
+The tangible thing I want out of this isn't the code in this repo. It's the
+knowledge gained along the way, written down as instructions for coding
+agents ([`AGENTS.md`](AGENTS.md), [`docs/`](docs)). With them, anyone can
+build their own version, shaped to their own life, without starting from
+scratch. Instead of sharing a finished product, this shares the know-how to
+build your own: a different take on open source.
+
+How to do this well is still an open question, and one I'll be
+investigating: how to write these instructions so agents can work
+effectively from them, and help each person shape the personal part, their
+own version of the phone, together with them.
+
+## The setup
+
+- **Phone:** a OnePlus 6 running [Nura](https://nura.eco) (formerly postmarketOS), a
+  real Linux distribution for phones. In Nura's words: "there is no
+  surveillance, no upselling and no 'walled gardens'." No desktop
+  environment underneath: this shell *is* the phone.
+- **Shell:** a React app in a Chromium kiosk inside `cage`, at a calm
+  1080×2280 portrait.
+- **Daemon:** a small, dependency-free Node process on the phone. It serves
+  the shell and owns all access to the system (battery, screen, audio,
+  modem), over HTTP and server-sent events on `127.0.0.1`.
+- **The Mac:** where my work lives. The phone and the Mac sync directly,
+  peer to peer, with [syncd](https://github.com/nbaglivo/syncd), with no
+  cloud in between.
+
+Details in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/device.md`](docs/device.md).
+
+## What it does
+
+- **Home:** the time, the day, the battery, and a short list of apps. No
+  badges, no red dots, no notifications competing for attention.
+- **Call** and **messages:** calls and SMS over the phone's modem.
+- **Listen:** music and audiobooks, resuming where I left off, through the
+  speaker or headphones.
+- **Sync:** I drop music and audiobooks into a folder on my Mac, and they
+  show up on the phone.
+- **Speak:** tap record, say a thought out loud on a walk, tap stop, pocket
+  it. The recording goes to my Mac, gets transcribed on the Mac with
+  [Whistle](https://cactuscompute.com/blog/whistle), gets tidied up in my own
+  words, and lands in that day's note, ready for when I sit down to write.
+- **Power:** the screen blanks and the phone suspends when idle, and stays
+  awake while it's playing, recording or syncing.
+
+## Working on it
 
 ```sh
 npm install
-npm run dev       # http://localhost:5173 (also on your LAN, for testing on the phone)
-npm run build     # static output in dist/
+npm run dev          # the shell, http://localhost:5173
+npm run build        # static output in dist/
+./scripts/deploy.sh  # build, copy to the phone, restart the session
 ```
-
-## Layout
-
-```
-src/
-  App.tsx              screen switcher (home ⇄ app), Escape = home
-  styles.css           tokens (light/dark via prefers-color-scheme or [data-theme]) + all styles
-  hooks/useNow.ts      minute-aligned clock
-  hooks/useStoredState.ts  localStorage-backed state (notes, message threads)
-  components/          Back (doubles as the clock), Icons (stroke SVGs)
-  apps/                Home, Call, Messages, Notes, Music, Read
-  data/seed.ts         placeholder content — replace with real sources
-```
-
-## What's real and what isn't
-
-- Clock, notes and message replies are real and persist locally.
-- Calling, contacts, message delivery, playback and the reading list are stubs.
-  Each lives in one component, ready to wire to the device (ModemManager/oFono,
-  MPRIS, your P2P sync layer…).
-
-## Running it as the shell on the phone
-
-Build, then serve `dist/` and open it full-screen in a kiosk browser (e.g. `cage` + a WebKit/Chromium kiosk) on login.
