@@ -33,6 +33,12 @@ build their own version, shaped to their own life, without starting from
 scratch. Instead of sharing a finished product, this shares the know-how to
 build your own: a different take on open source.
 
+That know-how lives in [`docs/know-how/`](docs/know-how/README.md): for each
+decision (device and OS, kiosk session, how the UI reaches the system, screen
+power, audio, sync, deploys) what I chose, the alternatives, what it cost and
+how it was verified. Point your agent at it before it starts; it doesn't need
+my code. Agents working on this repo keep it up to date as they go.
+
 How to do this well is still an open question, and one I'll be
 investigating: how to write these instructions so agents can work
 effectively from them, and help each person shape the personal part, their
