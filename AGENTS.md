@@ -43,6 +43,34 @@ local Node daemon ⇄ the system (sysfs files, D-Bus services).
 - Logs: the session (cage, Chromium, the daemon's stdout/stderr) writes to
   `~/.local/state/tinydm.log`; `journalctl -u tinydm -b` only has systemd's lines.
 
+## Recording know-how (always)
+
+This repo is also a field guide for building **your own** phone. Readers are
+other people's agents: they won't fork this code, they'll build something
+different and want our learnings to get there faster. While working here,
+keep `docs/know-how/` up to date as part of the task, not as a follow-up.
+
+Record it when you:
+
+- make or revisit a decision (stack, hardware, OS, protocol, UX trade-off);
+- hit a gotcha, dead end or surprise, or try something that didn't work;
+- measure something (power draw, latency, memory, disk, boot time);
+- find a fact about the device/OS that took effort to learn.
+
+How to write it (rules in `docs/know-how/README.md`):
+
+- Write for someone making a different phone: separate what's general
+  ("cage has no output power management") from what's our choice ("so we
+  suspend"). Name the alternatives and what would make them the better call.
+- Say how it was verified (on the phone, Mac only, read in docs) and date
+  measurements. Mark guesses as guesses.
+- Update the existing entry instead of adding a near-duplicate; if a decision
+  is reversed, keep the old reasoning and say why it changed.
+- `device.md` / `architecture.md` stay the reference for *this* phone; link to
+  them rather than copying, but put the lesson itself in `docs/know-how/`.
+- Before finishing a task, say in your summary which know-how entries you
+  added or changed (or that there was nothing new).
+
 ## Verifying work
 
 - Daemon without a phone: run it against fake sysfs
