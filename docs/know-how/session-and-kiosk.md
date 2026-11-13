@@ -14,6 +14,8 @@
   better call when the UI changes daily and you develop on a laptop.
 - **Cost / gotchas:** cage is minimal on purpose and lacks some protocols,
   e.g. output power management (see [power-and-screen](power-and-screen.md)).
+  Chromium calls Google by itself even when it only shows localhost; see
+  [privacy](privacy.md) for how we measured and stopped it.
 - **Verified:** on the phone, 2026-10-29.
 - **See:** `daemon/calm-session`, `docs/device.md` → "Session setup".
 
@@ -49,7 +51,8 @@
   be reached" and never retries.
 - **Our choice:** the session script starts the daemon, polls
   `curl http://127.0.0.1:8080/` for up to 10 s, then `exec`s cage. Flags:
-  `--ozone-platform=wayland --no-first-run --noerrdialogs --disable-pinch`.
+  `--ozone-platform=wayland --no-first-run --noerrdialogs --disable-pinch`,
+  plus the privacy flags in [privacy](privacy.md).
 - **Cost / gotchas:** a BusyBox `httpd` served the shell before the daemon
   existed. Its HTML 404 page is the sign an old session script is still running.
 - **Verified:** on the phone, 2026-10-30.

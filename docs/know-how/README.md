@@ -48,6 +48,8 @@ Rough order in which you'll meet them:
   IPC, volume keys and the headphone jack.
 - [Music sync](music-sync.md): one-way P2P sync from the laptop, musl native
   addons, disk use.
+- [Privacy](privacy.md): what leaves the phone, measuring a kiosk browser's
+  traffic, hardening Chromium.
 - [A calm UI](calm-ui.md): what's on screen and what deliberately isn't.
 
 Not covered yet (not built): calls and SMS (ModemManager), Bluetooth audio,

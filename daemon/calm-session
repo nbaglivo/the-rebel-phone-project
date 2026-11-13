@@ -17,9 +17,22 @@ until curl -s -o /dev/null http://127.0.0.1:8080/ || [ "$i" -ge 50 ]; do
 done
 [ "$i" -lt 50 ] || echo 'calm-session: daemon not up after 10s, starting kiosk anyway' >&2
 
+[ -e /etc/chromium/policies/managed/calm.json ] ||
+  echo 'calm-session: Chromium privacy policy not linked (docs/device.md)' >&2
+
+# The UI only needs 127.0.0.1. Some of Chromium's internal services (push,
+# accounts, components, search) call Google whatever the flags and policy
+# say, so everything non-loopback goes to a proxy that doesn't exist
+# (loopback always bypasses it). The other flags and
+# daemon/chromium-policy.json stop those services from trying at all.
 exec cage -- sh -c '
   wlr-randr --output "$(wlr-randr | head -1 | cut -d" " -f1)" --scale 2.5
   exec chromium --kiosk --app=http://127.0.0.1:8080 \
     --ozone-platform=wayland \
-    --no-first-run --noerrdialogs --disable-pinch
+    --no-first-run --noerrdialogs --disable-pinch \
+    --proxy-server=socks5://127.0.0.1:9 \
+    --disable-background-networking --disable-component-update \
+    --disable-sync --disable-default-apps --disable-domain-reliability \
+    --disable-client-side-phishing-detection --no-pings \
+    --disable-features=MediaRouter,OptimizationHints,Translate,AutofillServerCommunication
 '

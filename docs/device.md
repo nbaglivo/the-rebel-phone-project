@@ -61,6 +61,8 @@ doas apk add nodejs curl rsync   # rsync is optional, faster deploys
 doas install -d -o user -g user /opt/calm /opt/calm-daemon
 doas chown -R user:user /opt/calm /opt/calm-daemon
 doas ln -sf /opt/calm-daemon/calm-session /usr/local/bin/calm-session
+doas install -d /etc/chromium/policies/managed
+doas ln -sf /opt/calm-daemon/chromium-policy.json /etc/chromium/policies/managed/calm.json
 printf '%s\n' \
   'permit nopass user as root cmd systemctl args restart tinydm' \
   'permit nopass user as root cmd systemctl args start tinydm' \
@@ -75,6 +77,10 @@ power key press ever shuts the phone down, check it with
 
 Then run `./scripts/deploy.sh` once from the Mac (until it has, the symlink
 points at nothing and the session can't start).
+
+The Chromium policy symlink locks the kiosk down (no Google services, only
+`127.0.0.1:8080` can load; see `docs/know-how/privacy.md`). Without it the
+session still starts and logs `Chromium privacy policy not linked`.
 
 Only (re)starting tinydm is passwordless; everything else still asks. The
 doas rules go in `/etc/doas.d/zz-calm.conf` because the last matching rule
