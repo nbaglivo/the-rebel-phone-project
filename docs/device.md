@@ -165,6 +165,19 @@ storage is RocksDB, which hands that space back on compaction, not right away
   stopped and finishes (same md5).
 - Over USB networking a 144 MB file takes ~7 s; over Wi-Fi ~15–20 s.
 
+Re-checked on 2026-11-13 with the syncd from `ba6facd`:
+
+- Redeploy keeps the drive key and storage (`CORESTORE` unchanged).
+- A small file dropped on the Mac is on the phone ~16 s later (10 s of that
+  is the Mac's settle time); deleting it removes it ~5 s later, from Listen too.
+- After a reboot `calm-syncd` and the session come up on their own, with the
+  same key, and the next dropped file arrives in ~11 s.
+- After logging out of the Mac and back in, the launchd agent is running and
+  a dropped file reaches the phone.
+- The previous syncd segfaulted when stopped after 3 h (330 MB memory peak);
+  the new one stopped cleanly once. If deploys show `status=11/SEGV` in
+  `journalctl -u calm-syncd`, that's back.
+
 ### Pairing
 
 1. Put at least one file in the Mac folder (an empty Mac folder is refused
@@ -240,6 +253,9 @@ storage is RocksDB, which hands that space back on compaction, not right away
   script is still serving the shell.
 - **`doas: a tty is required`** from `deploy.sh`: the nopass rules are
   missing or overridden; see the one-time setup.
+- **`warning: /usr/local/bin/calm-session is not linked`** from `deploy.sh`:
+  the phone boots an old copy of the session script, not the deployed one.
+  Fix with `doas ln -sf /opt/calm-daemon/calm-session /usr/local/bin/calm-session`.
 - **`doas -C` is misleading**: as `user` it can't read the config; under
   `doas` it checks rules for root. Read the rule files instead.
 - Battery on this device is a `bq27411`-style fuel gauge under
