@@ -49,6 +49,11 @@
   compaction, not right away.
 - An interrupted download resumes after suspend and finishes with the same
   md5.
+- Small file, Mac → phone: ~11–16 s end to end, of which 10 s is the Mac's
+  settle time. A delete reaches the phone in ~5 s (2026-11-13).
+- Watch native addons for crashes on shutdown. One syncd version segfaulted
+  (`SIGSEGV` in node) when systemd stopped it after hours of running. With
+  `Restart=always` it came back, so the only sign was in the journal.
 
 ## Running it as a background service on each side
 

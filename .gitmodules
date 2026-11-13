@@ -1,0 +1,3 @@
+[submodule "vendor/syncd"]
+	path = vendor/syncd
+	url = https://github.com/nbaglivo/syncd

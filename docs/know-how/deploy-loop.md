@@ -18,6 +18,17 @@
 - **Verified:** on the phone, 2026-10-30.
 - **See:** `docs/device.md` → "One-time setup".
 
+## Make deploy warnings impossible to miss, or make them errors
+
+- **Context:** the session script is meant to be a symlink into the deployed
+  code. On our phone it was still a plain file from before that change, so
+  the phone booted a two-week-old session script. `deploy.sh` printed a
+  warning on every run, and nobody (human or agent) acted on it.
+- **Lesson:** a deploy that "succeeds" with a warning reads as a success. If
+  a check means the phone won't run what you just deployed, fail the deploy.
+  Or have the agent read the deploy output and report every warning.
+- **Verified:** on the phone, 2026-11-13.
+
 ## Expect the connection to drop
 
 - **Fact:** USB networking drops for up to a minute after each

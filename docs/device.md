@@ -80,7 +80,119 @@ Only (re)starting tinydm is passwordless; everything else still asks. The
 doas rules go in `/etc/doas.d/zz-calm.conf` because the last matching rule
 wins and the image's own `/etc/doas.d/` rules would otherwise override them.
 
+## Music sync (syncd)
+
+Music and audiobooks come from a folder on the Mac through
+[syncd](https://github.com/nbaglivo/syncd) (vendored at `vendor/syncd`), one
+way: the Mac publishes, the phone pulls into `~/Music`, and deletes follow.
+Design: `docs/superpowers/specs/2026-11-08-sync-design.md`.
+
+### Mac
+
+```sh
+git submodule update --init
+./scripts/mac/install-syncd.sh            # publishes ~/Phone/Music
+./scripts/mac/install-syncd.sh ~/Other    # or another folder
+```
+
+It installs a launchd agent (`dev.rebelphone.syncd`, starts at login,
+restarted if it dies) and prints the Mac's drive key. Re-run it after
+updating the submodule or changing the node version in mise (the agent pins
+node's absolute path, since launchd has no mise shims). Same storage, same
+key. Files are published once they haven't changed for 10 s.
+
+- Code: `~/Library/Application Support/syncd/app`
+- Storage (holds the key, keep it): `~/Library/Application Support/syncd/storage`
+- Log: `~/Library/Logs/syncd.log`
+- Status: `launchctl print gui/$(id -u)/dev.rebelphone.syncd | grep state`
+- Stop: `launchctl bootout gui/$(id -u)/dev.rebelphone.syncd`
+
+### Phone
+
+`calm-syncd` (systemd, runs as `user`, starts at boot) pulls into `~/Music`
+with `PUSH=0 ATOMIC=1 WIPE_GUARD=1`; `./scripts/deploy.sh` updates and
+restarts it. One-time setup (needs the doas password, so run it in a real
+terminal, not via `!`):
+
+```sh
+scp scripts/calm-syncd.service user@172.16.42.1:/tmp/
+ssh user@172.16.42.1 'install -d ~/.config/syncd ~/.local/share/syncd ~/.local/state/syncd'
+ssh -t user@172.16.42.1 doas sh -c '"apk add npm rsync &&
+  install -d -o user -g user /opt/calm-syncd &&
+  install -o user -g user -m 644 /tmp/calm-syncd.service /opt/calm-syncd/ &&
+  systemctl link /opt/calm-syncd/calm-syncd.service && systemctl enable calm-syncd &&
+  printf \"%s\n\" \"permit nopass user as root cmd systemctl args daemon-reload\"
+    \"permit nopass user as root cmd systemctl args restart calm-syncd\" >> /etc/doas.d/zz-calm.conf"'
+```
+
+- Code: `/opt/calm-syncd` (+ `node_modules`, installed on the phone by deploy
+  when `package-lock.json` changes)
+- Config: `~/.config/syncd/env` (`PEER_KEY=<mac key>`)
+- Storage (keep it): `~/.local/share/syncd`
+- Status (read by the daemon): `~/.local/state/syncd/status.json`
+- Logs: `journalctl -u calm-syncd -f`
+
+**Native addons are built for musl on the Mac.** syncd's addons
+(`rocksdb-native`, `sodium-native`, `udx-native`, …) only ship glibc
+prebuilds; postmarketOS is musl. `gcompat` is not enough (`rocksdb-native`
+segfaults). `scripts/build-musl-addons.sh` (called by deploy) builds each
+`name@version` from syncd's lockfile in an arm64 Alpine container (Docker),
+caches it in `.cache/musl-addons/`, and deploy copies it to
+`node_modules/<name>/prebuilds/linux-arm64-musl/` and checks it loads. A syncd
+dependency bump therefore needs Docker for one deploy; recipe and the two
+header-drift fixes: `scripts/musl/build-addon.sh`.
+
+### Disk use
+
+Each side keeps one copy of the current files in syncd's storage on top of the
+folder itself, so the library takes about 2× its size on the Mac and on the
+phone. Deleted and replaced files have their blocks cleared; on the phone the
+storage is RocksDB, which hands that space back on compaction, not right away
+(`du` of `~/.local/share/syncd` doesn't drop immediately after a delete).
+
+### Behaviour checked on the phone (2026-11-08)
+
+- An album added on the Mac appears in Listen, no `*.tmp` in the library;
+  deleting it removes the files and the library rows.
+- Emptying the Mac folder is refused (`pull refused: would leave … empty`).
+- A file copied slowly into the Mac folder (10 MB over ~20 s) arrives whole:
+  the Mac waits until it has been unchanged for 10 s.
+- Deleting the file loaded in Listen: Listen moves to another file, paused.
+- Screen off mid-download: blanks (`syncing=true`); off USB it suspends ~30 s
+  after the pull ends. On USB it stays blanked, as idle never suspends on USB.
+- syncd frozen mid-download: its status goes stale and the phone suspends
+  ~2 min later; after wake and resume the download continues from where it
+  stopped and finishes (same md5).
+- Over USB networking a 144 MB file takes ~7 s; over Wi-Fi ~15–20 s.
+
+Re-checked on 2026-11-13 with the syncd from `ba6facd`:
+
+- Redeploy keeps the drive key and storage (`CORESTORE` unchanged).
+- A small file dropped on the Mac is on the phone ~16 s later (10 s of that
+  is the Mac's settle time); deleting it removes it ~5 s later, from Listen too.
+- After a reboot `calm-syncd` and the session come up on their own, with the
+  same key, and the next dropped file arrives in ~11 s.
+- After logging out of the Mac and back in, the launchd agent is running and
+  a dropped file reaches the phone.
+- The previous syncd segfaulted when stopped after 3 h (330 MB memory peak);
+  the new one stopped cleanly once. If deploys show `status=11/SEGV` in
+  `journalctl -u calm-syncd`, that's back.
+
+### Pairing
+
+1. Put at least one file in the Mac folder (an empty Mac folder is refused
+   by the phone's wipe guard).
+2. On the phone: `printf 'PEER_KEY=%s\n' <mac key> > ~/.config/syncd/env`,
+   then `doas systemctl restart calm-syncd`.
+3. The first sync replaces whatever is in the phone's `~/Music`.
+
 ## Gotchas we already hit
+
+- **SSH over Wi-Fi** (USB unplugged): `ssh -o HostKeyAlias=172.16.42.1
+  user@<wlan0 ip>` reuses the USB host key. Off USB the phone suspends after
+  30 s idle, so start long checks right after waking it.
+- **`pkill -f <pattern>` over SSH also matches the remote shell** whose command
+  line contains the pattern; signal by PID instead.
 
 - **Daemon logs** are in `~/.local/state/tinydm.log` (with cage and
   Chromium), not in the journal. `grep -E '^(screen|listen|audio|mpv):'`
@@ -141,6 +253,9 @@ wins and the image's own `/etc/doas.d/` rules would otherwise override them.
   script is still serving the shell.
 - **`doas: a tty is required`** from `deploy.sh`: the nopass rules are
   missing or overridden; see the one-time setup.
+- **`warning: /usr/local/bin/calm-session is not linked`** from `deploy.sh`:
+  the phone boots an old copy of the session script, not the deployed one.
+  Fix with `doas ln -sf /opt/calm-daemon/calm-session /usr/local/bin/calm-session`.
 - **`doas -C` is misleading**: as `user` it can't read the config; under
   `doas` it checks rules for root. Read the rule files instead.
 - Battery on this device is a `bq27411`-style fuel gauge under

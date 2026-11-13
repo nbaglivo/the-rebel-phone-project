@@ -24,6 +24,13 @@ test('the power key blanks while playing and suspends otherwise, even on USB', (
   assert.equal(decideScreenOff({ reason: 'power', playing: false, usb: false }), 'suspend')
 })
 
+test('a running sync blanks instead of suspending, like playback', () => {
+  assert.equal(decideScreenOff({ reason: 'idle', playing: false, usb: false, syncing: true }), 'blank')
+  assert.equal(decideScreenOff({ reason: 'power', playing: false, usb: true, syncing: true }), 'blank')
+  assert.equal(decideScreenOff({ reason: 'idle', playing: false, usb: true, syncing: true }), 'stay')
+  assert.equal(decideScreenOff({ reason: 'idle', playing: false, usb: false, syncing: false }), 'suspend')
+})
+
 test('usbOnline sees any online USB or Mains supply', async () => {
   assert.equal(await usbOnline(FIXTURES), true)
   const dir = await mkdtemp(join(tmpdir(), 'calm-ps-'))
