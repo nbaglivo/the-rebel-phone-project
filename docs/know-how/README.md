@@ -51,6 +51,7 @@ Rough order in which you'll meet them:
 - [Privacy](privacy.md): what leaves the phone, measuring a kiosk browser's
   traffic, hardening Chromium.
 - [A calm UI](calm-ui.md): what's on screen and what deliberately isn't.
+- [Licensing](licensing.md): picking an open-source license for the project.
 
 Not covered yet (not built): calls and SMS (ModemManager), Bluetooth audio,
 brightness control, notes/messages sync.

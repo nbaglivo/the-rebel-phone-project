@@ -86,3 +86,9 @@ npm run dev          # the shell, http://localhost:5173
 npm run build        # static output in dist/
 ./scripts/deploy.sh  # build, copy to the phone, restart the session
 ```
+
+## License
+
+[GPL-3.0-or-later](LICENSE). You're free to use, study, change and share
+this code. If you ship a modified version, publish its source under the same
+license.
