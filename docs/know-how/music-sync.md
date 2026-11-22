@@ -13,8 +13,7 @@
   config). rsync over SSH on a timer (simplest, LAN or VPN only). A
   cloud folder. P2P is the better call if you want local-first apps later.
 - **Verified:** on the phone, 2026-11-08.
-- **See:** `docs/superpowers/specs/2026-11-08-sync-design.md`,
-  `docs/device.md` → "Music sync".
+- **See:** `docs/device.md` → "Music sync".
 
 ## Native npm addons need musl builds, and gcompat is not enough
 

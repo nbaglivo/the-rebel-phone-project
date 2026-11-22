@@ -91,7 +91,6 @@ wins and the image's own `/etc/doas.d/` rules would otherwise override them.
 Music and audiobooks come from a folder on the Mac through
 [syncd](https://github.com/nbaglivo/syncd) (vendored at `vendor/syncd`), one
 way: the Mac publishes, the phone pulls into `~/Music`, and deletes follow.
-Design: `docs/superpowers/specs/2026-11-08-sync-design.md`.
 
 ### Mac
 

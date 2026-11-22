@@ -20,6 +20,8 @@ local Node daemon ⇄ the system (sysfs files, D-Bus services).
 - `daemon/` — the Node daemon (to be built). See `docs/architecture.md`.
 - `scripts/deploy.sh` — build + copy to the phone + restart the session.
 - `docs/device.md` — how the phone is set up, and every gotcha we hit.
+- `docs/superpowers/` — local working specs and plans (gitignored). **Never
+  commit anything under it**; put lasting lessons in `docs/know-how/` instead.
 
 ## Hard constraints
 
