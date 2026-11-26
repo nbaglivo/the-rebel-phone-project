@@ -4,15 +4,18 @@
 # (ARCHIVE=1: never deletes, overwrites or re-fetches). Safe to run again.
 #   ./scripts/mac/install-archive.sh <phone-drive-key>             # ~/Notebook
 #   ./scripts/mac/install-archive.sh <phone-drive-key> ~/Somewhere
-# The phone's key: ssh user@172.16.42.1 'journalctl -u calm-syncd-scans | grep -A1 "MY DRIVE KEY" | tail -1'
-# Doesn't touch the music agent (dev.rebelphone.syncd), its storage or log.
+# The phone's key: ssh user@172.16.42.1 'journalctl -u calm-syncd-scans -o cat | grep -A1 "MY DRIVE KEY" | tail -1'
+# Keeps its own launchd agent, storage and log, apart from the music agent
+# (dev.rebelphone.syncd). The code is shared: both agents run syncd from the
+# same app folder, which this script refreshes from vendor/syncd, so the music
+# agent picks up that code the next time it restarts.
 set -eu
 
 KEY="${1:-}"
 case "$KEY" in
-  [0-9a-f][0-9a-f]*) [ "${#KEY}" -eq 64 ] || KEY="" ;;
-  *) KEY="" ;;
+  *[!0-9a-f]*) KEY="" ;;
 esac
+[ "${#KEY}" -eq 64 ] || KEY=""
 [ -n "$KEY" ] || { echo "usage: $0 <phone-drive-key (64 hex)> [folder]" >&2; exit 1; }
 FOLDER="${2:-$HOME/Notebook}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

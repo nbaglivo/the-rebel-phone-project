@@ -1,7 +1,8 @@
 # Camera
 
-Nothing in the shell uses the camera yet. These entries come from a first
-hardware test, so you know what works before you design anything around it.
+The shell's Notebook app uses the back camera as a page scanner. The first
+entries come from the hardware tests before it was built; the later ones from
+building and running it.
 
 ## The cameras work on mainline: all three sensors stream
 
@@ -87,9 +88,9 @@ hardware test, so you know what works before you design anything around it.
 - **Fact:** `libcamerasrc` on the imx519 negotiates `RGBA 2584×1940` (the soft
   ISP's output) with the caps below; no format had to be forced. The frame is
   landscape and sideways: `videoflip method=clockwise` makes it portrait
-  1940×2584. Direction checked on an earlier `cam` capture of a notebook page
-  (text read upright after a clockwise turn); the scene during this test was
-  dark, so the gst still itself only proves the size.
+  1940×2584. Direction first checked on a `cam` capture of a notebook page;
+  later confirmed on a real gst still of a lit page (see "Notebook end to end"
+  below).
 - **Our choice:** one `gst-launch-1.0 -q` process, a `tee`, two leaky branches
   (`daemon/notebook/pipeline.mjs`):
 
@@ -129,8 +130,9 @@ hardware test, so you know what works before you design anything around it.
   bottom rows of the sensor frame before rotation). Seen in a dark scene;
   unknown whether it is the soft ISP or optics. Crop it if it shows on paper.
 - **Gotcha:** `libcamerasrc`'s `ae-enable` property defaults to `false` in
-  `gst-inspect`. In a dark scene `true` gave a still of the same size (not viewed);
-  check auto-exposure in daylight before relying on the default.
+  `gst-inspect`. We left it at the default: under a lamp the real page came
+  out well exposed (see "Notebook end to end"). Not tested in daylight or
+  in a dim room; try `ae-enable=true` first if pages come out dark there.
 - **Alternatives:** two processes (`cam` for stills, a separate stream for
   preview) would fight over the one camera. A smaller capture size would cut
   CPU a lot but lose the still's resolution; a `role=viewfinder` stream plus a
@@ -155,14 +157,24 @@ hardware test, so you know what works before you design anything around it.
   so the shell knows why. Still images (pending shot, scans) are plain GETs.
   It is the one exception to the single-transport rule: pixels only, never
   state.
+- **Gotcha:** an MJPEG `<img>` whose stream ends (screen off, daemon restart)
+  just freezes on its last frame: it does not reconnect, and it may not fire
+  `onerror`. A shell that waits for frames from it waits forever ("starting
+  camera…" stuck). **Our fix:** screen off stops the camera as `paused`, so
+  the shell shows "tap to resume" on wake instead of the dead `<img>`; the
+  preview answers 503 while the screen is off (so a stray reconnect can't
+  start the camera, and the `<img>` errors into the resume button); and when
+  the camera drops to `off` under an open viewfinder (daemon restart), the
+  shell remounts the `<img>` once with a new URL. Mac-tested with unit tests
+  and a build; not yet walked on the phone.
 - **Alternatives:** frames as base64 in SSE (+33 % bytes, a JS decode and
   `<img src>` swap per frame); a WebSocket (needs a hand-written framing
   layer in a zero-dependency daemon); WebRTC or `getUserMedia` in Chromium
   (the better call if you want real video at higher fps and your browser
   can open the camera through PipeWire/portals, which cage + libcamera
   here doesn't give us without more plumbing).
-- **Verified:** Mac only with the fake camera, 2026-11-26 (curl shows the
-  parts; the shell side is not built yet).
+- **Verified:** Mac with the fake camera (curl shows the parts), then on the
+  phone through the Notebook app, 2026-11-26.
 - **See:** `docs/architecture.md` → "Notebook (camera + scans)".
 
 ## Notebook end to end: what a real page looked like (2026-11-26)
@@ -171,7 +183,8 @@ hardware test, so you know what works before you design anything around it.
   a page under a lamp, shot from the shell, shipped to the Mac archive.
 - **Fact:** the still was upright (`videoflip method=clockwise` is right),
   1940×2584, 893 KB JPEG. Handwriting legible, paper near-white, ink dark.
-  Capture to file on the Mac took ~9 s over Wi-Fi/USB (settle 5 s included).
+  From tapping keep to the file on the Mac took ~9 s, 5 s of it syncd's
+  settle time (one run; the network path, USB or Wi-Fi, was not recorded).
 - **Our choice (levels):** greyscale + normalize on the still. The colour
   normalize alone left **cyan paper** on a real frame (the soft ISP's white
   balance is off under lamps and per-channel stretching does not fix a cast),
@@ -186,8 +199,10 @@ hardware test, so you know what works before you design anything around it.
     is a guess at how busybox normalises); Chromium's renderers ~0 %.
   - Battery `current_now` (bq27411-0): ~ +93 mA idle, about -320 to -380 mA with
     the preview open, back to +148 mA after. That is ~420 to 470 mA extra
-    draw (sign is relative to the charger on USB, so it is the swing that
-    matters, not the absolute values).
+    draw. On USB the charger feeds the phone, so a positive value is net
+    charging and the absolute numbers depend on the charger and charge
+    level (the idle baseline itself moved from +93 to +148 mA); only the
+    swing is meaningful, and roughly. Measure on battery for a real figure.
   - After the stream closes no `gst-launch` is left running.
 - **Verified:** on the phone and the Mac, 2026-11-26.
 - **See:** `docs/know-how/music-sync.md` for the archive side.

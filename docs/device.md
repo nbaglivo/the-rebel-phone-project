@@ -225,7 +225,7 @@ done, `deploy.sh` warns that `calm-syncd-scans` isn't enabled and carries on.
   (`SCANS_STATUS_FILE`)
 - Logs: `journalctl -u calm-syncd-scans -f`
 - The phone's drive key (needed once, for the Mac):
-  `ssh user@172.16.42.1 'journalctl -u calm-syncd-scans | grep -A1 "MY DRIVE KEY" | tail -1'`
+  `ssh user@172.16.42.1 'journalctl -u calm-syncd-scans -o cat | grep -A1 "MY DRIVE KEY" | tail -1'`
 
 - **Timezone:** the phone is on GMT (`/etc/localtime` -> `/usr/share/zoneinfo/GMT`),
   so scan file names (`YYYY-MM-DD_HH-MM-SS.jpg`) are GMT, not local time. To
