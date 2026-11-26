@@ -71,6 +71,16 @@
 - **Cost / gotchas:** the archive receiver can't pick up a corrected re-scan
   under the same name (it logs `archive skipped`); use new names. Unit-less
   `PEER_KEY` means publisher, so the phone's scans unit needs no env file.
+- **Gotcha:** the publisher's status only knows that *some* data went out
+  (`lastUpload`), not that a page arrived whole on the Mac; the shell's
+  "last received" line is that time. A real receipt would need the receiver
+  to report back, which this one-way sync doesn't do. `lastUpload` is kept
+  across a syncd restart (read back from the status file), else the line
+  went blank after every reboot.
+- **Gotcha:** a publisher must skip dotfiles: the daemon writes a kept scan
+  as `.incoming-*.tmp` and renames it, and an archive receiver that caught
+  the temp name would keep it forever. syncd's publisher now ignores any path
+  with a segment starting with `.` (unit-tested, Mac only).
 - **Verified:** phone + Mac, 2026-11-26: a kept scan reached `~/Notebook` in
   ~9 s (`archive +1`); deleting it on the phone left the Mac copy and log
   untouched.
