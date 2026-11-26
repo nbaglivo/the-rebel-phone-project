@@ -2,7 +2,7 @@
 // scans and the archive status, published as one `notebook` event.
 // server.mjs only routes to it; contract in docs/architecture.md.
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const LIVE = new Set(['starting', 'on'])
@@ -90,16 +90,19 @@ export function createNotebook({
   // One shot at a time: they share the stable copy of the still.
   let chain = Promise.resolve()
   async function shootUnlocked() {
-    const still = camera.latestStill()
+    // A paused or stopped camera leaves its last still behind: never shoot a stale frame.
+    const still = camera.state().state === 'on' ? camera.latestStill() : null
     if (!still) return 'camera not ready'
     const buf = await readStill(still)
     if (!buf) return 'camera still unreadable, try again'
     const copy = still.replace(/(\.jpg)?$/, '.shot.jpg')
-    await writeFile(copy, buf)
     camera.shot()
     try {
+      await writeFile(copy, buf)
       await scans.shoot(copy)
     } finally {
+      // ~2 MB on tmpfs per shot otherwise.
+      await rm(copy, { force: true }).catch(() => {})
       refresh()
     }
   }
@@ -144,6 +147,8 @@ export function createNotebook({
     screenOff: after(async () => {
       camera.stop('screen off')
       for (const res of [...previews.keys()]) endPreview(res)
+      // A shot still in ffmpeg would land as pending after screen off: let it finish, then keep it.
+      await chain
       await scans.keep()
     }),
     previewing: () => previews.size > 0,
