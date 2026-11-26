@@ -30,6 +30,7 @@ export function createNotebook({
   publish,
   scansDir,
   pendingPath,
+  screenOn = () => true,
   stillRetries = 5,
   stillRetryMs = 100,
 }) {
@@ -60,6 +61,12 @@ export function createNotebook({
   }
 
   function preview(req, res) {
+    // The camera never runs with the screen off, even if a stale <img> reconnects.
+    if (!screenOn()) {
+      res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' })
+      res.end('screen off')
+      return
+    }
     res.writeHead(200, {
       'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
       'Cache-Control': 'no-cache',
@@ -144,8 +151,9 @@ export function createNotebook({
     retake: after(() => scans.retake()),
     remove: after((name) => scans.remove(name)),
     // Screen off: stop the camera and never lose a page, so a pending shot is kept.
+    // Paused, not off: on wake the shell shows "tap to resume" instead of a dead stream.
     screenOff: after(async () => {
-      camera.stop('screen off')
+      camera.stop('screen off', 'paused')
       for (const res of [...previews.keys()]) endPreview(res)
       // A shot still in ffmpeg would land as pending after screen off: let it finish, then keep it.
       await chain

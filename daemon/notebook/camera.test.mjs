@@ -224,3 +224,26 @@ test('stop then immediate attach never overlaps two processes', withEnv({ FAKE_C
     cleanup()
   }
 }))
+
+test('stop() with a final state leaves the camera there, running or idle', async () => {
+  const { camera, cleanup } = setup()
+  try {
+    camera.attach(() => {})
+    await waitFor(() => camera.state().state === 'on')
+    camera.stop('screen off', 'paused')
+    assert.equal(camera.state().state, 'paused')
+    await new Promise((r) => setTimeout(r, 150))
+    assert.equal(camera.state().state, 'paused')
+    const idle = setup()
+    try {
+      idle.camera.stop('screen off', 'paused')
+      assert.equal(idle.camera.state().state, 'paused')
+      idle.camera.stop('shutting down')
+      assert.equal(idle.camera.state().state, 'paused')
+    } finally {
+      idle.cleanup()
+    }
+  } finally {
+    cleanup()
+  }
+})

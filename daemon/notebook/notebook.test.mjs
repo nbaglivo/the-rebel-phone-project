@@ -165,7 +165,7 @@ test('screenOff stops the camera, ends the preview and keeps the pending shot', 
   const { res } = await openPreview(s)
   await s.notebook.shoot()
   await s.notebook.screenOff()
-  assert.equal(s.camera.state().state, 'off')
+  assert.equal(s.camera.state().state, 'paused')
   assert.equal(res.ended, true)
   assert.equal(s.notebook.previewing(), false)
   assert.equal(s.scans.pending(), null)
@@ -322,4 +322,34 @@ test('the stable copy of the still is deleted after the shot, whatever happened'
   const f = await setup({ camera: stubCamera(failStill) })
   await assert.rejects(f.notebook.shoot())
   assert.deepEqual((await readdir(failRoot)).sort(), ['still.jpg'])
+})
+
+test('screenOff leaves the camera paused, so the shell offers resume on wake', async () => {
+  const s = await setup()
+  await openPreview(s)
+  await s.notebook.screenOff()
+  assert.equal(s.camera.state().state, 'paused')
+  assert.equal(s.last().camera, 'paused')
+})
+
+test('screenOff while nothing previews still leaves the camera paused', async () => {
+  const s = await setup()
+  await s.notebook.screenOff()
+  assert.equal(s.last().camera, 'paused')
+})
+
+test('the preview is refused while the screen is off and never starts the camera', async () => {
+  let on = false
+  const s = await setup({ screenOn: () => on })
+  const { req, res } = fakeHttp()
+  s.notebook.preview(req, res)
+  assert.equal(res.status, 503)
+  assert.equal(res.ended, true)
+  assert.equal(s.notebook.previewing(), false)
+  assert.equal(s.camera.state().state, 'off')
+  on = true
+  const open = fakeHttp()
+  s.notebook.preview(open.req, open.res)
+  assert.equal(open.res.status, 200)
+  open.req.emit('close')
 })

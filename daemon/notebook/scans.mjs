@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { mkdir, rename, rm, stat, unlink } from 'node:fs/promises'
 import { promisify } from 'node:util'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 const execFileP = promisify(execFile)
 
@@ -64,6 +64,7 @@ export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date(), 
 
   async function initUnlocked() {
     await mkdir(dir, { recursive: true })
+    await mkdir(dirname(pendingPath), { recursive: true })
     // A truncated encode from a crash is never a scan.
     await rm(partPath, { force: true })
     for (const n of readdirSync(dir).filter((n) => /^\.incoming-.*\.tmp$/.test(n))) {

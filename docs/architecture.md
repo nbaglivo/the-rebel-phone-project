@@ -51,7 +51,7 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `SCANS_DIR`        | `~/scans` (published to the archive by the scans syncd) |
 | `CAMERA_CMD`       | `gst-launch-1.0` (split on spaces; Mac: `node daemon/fixtures/fake-camera.mjs`) |
 | `CAMERA_STILL`     | `$XDG_RUNTIME_DIR/calm-still.jpg` (tmpdir if unset) |
-| `PENDING_FILE`     | `~/.local/state/calm/pending.jpg` (the shot waiting for keep/retake) |
+| `PENDING_FILE`     | `~/.local/state/calm/pending.jpg` (the shot waiting for keep/retake; its folder is created at start, and it must be on the same filesystem as `SCANS_DIR`, since keep is a rename) |
 | `FFMPEG_CMD`       | `ffmpeg` (split on spaces; Mac: `node daemon/fixtures/fake-ffmpeg.mjs`) |
 | `SCANS_STATUS_FILE`| `~/.local/state/syncd-scans/status.json` (written by the scans syncd) |
 | `SPEAKER_SINK`     | `alsa_output.platform-sound.HiFi__Speaker__sink` |
@@ -92,7 +92,7 @@ and treats a file older than 3 minutes as not connected. While it says
 | `screen`   | `{ on: boolean }` | `false` while suspending or suspended, see below |
 | `listen`   | `{ current: { id, title, folder, duration } \| null, playing, position, positionAt, error: string \| null }` | the player (`daemon/listen/`); sent on changes and at most every 5 s while playing — the shell interpolates from `positionAt` (ms) |
 | `library`  | `[{ id, title, folder, duration, position, lastPlayed }]`, recently played first, then unplayed by title | scan of `MUSIC_DIR` (`id` = path relative to it), rescanned 3 s after files there stop changing (`*.localdrive.tmp` ignored) |
-| `notebook` | `{ camera: "off"\|"starting"\|"on"\|"paused"\|"error", error: string \| null, pending: number \| null, scans: string[], archive: { connected, uploading, lastReceived: number \| null } \| null }` | `daemon/notebook/`: camera state on every change; `pending` = capture time (ms) of the shot awaiting review, also the shell's cache key for its image; `scans` = file names in `SCANS_DIR`, newest first; `archive` = `SCANS_STATUS_FILE` (null: no file, scans sync not set up) |
+| `notebook` | `{ camera: "off"\|"starting"\|"on"\|"paused"\|"error", error: string \| null, pending: number \| null, scans: string[], archive: { connected, uploading, lastReceived: number \| null } \| null }` | `daemon/notebook/`: camera state on every change; `pending` = capture time (ms) of the shot awaiting review, also the shell's cache key for its image; `scans` = file names in `SCANS_DIR`, newest first; `archive` = `SCANS_STATUS_FILE` (null: no file, scans sync not set up); `lastReceived` = syncd's `lastUpload`, the last time the phone sent the archive *any* data, not proof that a given page arrived whole |
 
 ### Notebook (camera + scans)
 
@@ -103,7 +103,8 @@ holds `GET /camera/preview` open**: the first viewer starts it, the last one
 leaving stops it, and 2 minutes without a shot stop it as `paused` (open
 preview responses end; the shell offers "tap to resume"). A crash is
 `error` with gst's last stderr line. Screen off (power key, idle, blank)
-stops the camera, and idle never turns the screen off while a preview is
+stops the camera as `paused` (so on wake the shell offers resume instead of a
+dead stream), the preview answers 503 while the screen is off, and idle never turns the screen off while a preview is
 open (aiming needs no touches; the 2-minute timeout bounds it).
 
 A shot reads the latest still, checks it is a whole JPEG (starts FFD8, ends
@@ -125,7 +126,7 @@ the `notebook` event; these endpoints carry pixels only:
 - `GET /camera/preview` — `multipart/x-mixed-replace; boundary=frame`, each
   part `Content-Type: image/jpeg` with `Content-Length`; `Cache-Control:
   no-cache`. Opening it starts the camera, closing it detaches. Slow clients
-  skip frames.
+  skip frames. 503 while the screen is off (the camera never starts then).
 - `GET /notebook/pending.jpg` — the shot awaiting review (404 if none).
 - `GET /scans/<name>` — a kept scan; only names in the `scans` list (404
   otherwise, so nothing outside `SCANS_DIR` is reachable).

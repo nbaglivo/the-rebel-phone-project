@@ -379,6 +379,7 @@ notebook = createNotebook({
   publish,
   scansDir: SCANS_DIR,
   pendingPath: PENDING_FILE,
+  screenOn: () => screenOn,
 })
 
 const actions = createActions({ setScreen, player, notebook })

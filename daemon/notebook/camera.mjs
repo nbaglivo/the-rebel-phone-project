@@ -111,11 +111,14 @@ export function createCamera({ cmd, args, stillPath, timeoutMs = 120_000, onStat
         }
       }
     },
-    stop(reason) {
+    // final: 'paused' tells the shell to offer resume (screen off); 'off' is a plain stop.
+    stop(reason, final = 'off') {
       clients.clear()
       if (child || pendingStart) {
         kill()
-        setState('off')
+        setState(final)
+      } else if (final !== 'off' && state !== final) {
+        setState(final)
       }
     },
     shot() {

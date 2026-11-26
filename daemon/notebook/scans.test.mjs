@@ -169,3 +169,14 @@ test('a hung ffmpeg is killed: shoot rejects, nothing pending, no .part left', a
   await assert.rejects(access(pendingPath))
   await assert.rejects(access(join(root, 'pending.part.jpg')))
 })
+
+test('init creates the folder of the pending file, so the first shot lands', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'scans-'))
+  const still = join(root, 'still.jpg')
+  await writeFile(still, 'jpeg-bytes')
+  const pendingPath = join(root, 'state/calm/pending.jpg')
+  const scans = createScans({ dir: join(root, 'scans'), pendingPath, ffmpeg: [process.execPath, fake] })
+  await scans.init()
+  await scans.shoot(still)
+  await access(pendingPath)
+})
