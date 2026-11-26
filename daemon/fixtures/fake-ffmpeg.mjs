@@ -7,4 +7,5 @@ if (input.includes('FAIL')) {
   console.error('fake-ffmpeg: boom')
   process.exit(1)
 }
+if (input.includes('SLOW')) await new Promise((r) => setTimeout(r, 300))
 copyFileSync(input, args[args.length - 1])

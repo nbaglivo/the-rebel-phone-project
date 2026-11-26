@@ -10,7 +10,7 @@ import { join } from 'node:path'
 const execFileP = promisify(execFile)
 
 const PATTERN = /^(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:-(\d+))?\.jpg$/
-const FILTER = 'normalize=blackpt=black:whitept=white:smoothing=0'
+const FILTER = 'hue=s=0,normalize=blackpt=black:whitept=white:smoothing=0'
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -25,6 +25,8 @@ export function scanName(date, taken) {
 
 export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date() }) {
   let pendingAt = null
+  // Ends in .jpg so ffmpeg infers the format; renamed over pendingPath once complete.
+  const partPath = pendingPath.replace(/(\.jpg)?$/, '.part.jpg')
   // keep() writes a dot-name first so syncd never sees a half-written scan.
   let tmpCount = 0
 
@@ -36,39 +38,61 @@ export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date() }
     }
   }
 
+  // One operation at a time: shoot, keep, retake, remove and init share pendingPath.
+  let chain = Promise.resolve()
+  const locked = (fn) => (...args) => {
+    const run = chain.then(() => fn(...args))
+    chain = run.catch(() => {})
+    return run
+  }
+
+  const exists = (p) => stat(p).then(() => true, () => false)
+
   async function moveIn(captureTime) {
     const name = scanName(captureTime, new Set(names()))
     const tmp = join(dir, `.incoming-${process.pid}-${tmpCount++}.tmp`)
-    await rename(pendingPath, tmp)
-    await rename(tmp, join(dir, name))
-    pendingAt = null
-    return name
+    try {
+      await rename(pendingPath, tmp)
+      pendingAt = null
+      await rename(tmp, join(dir, name))
+    } catch (err) {
+      // A tmp left in dir is adopted by the next init(); only forget the shot if the file left.
+      if (!(await exists(pendingPath))) pendingAt = null
+      throw err
+    }
   }
 
-  async function init() {
+  async function initUnlocked() {
     await mkdir(dir, { recursive: true })
+    // A truncated encode from a crash is never a scan.
+    await rm(partPath, { force: true })
+    for (const n of readdirSync(dir).filter((n) => /^\.incoming-.*\.tmp$/.test(n))) {
+      const info = await stat(join(dir, n)).catch(() => null)
+      if (info) await rename(join(dir, n), join(dir, scanName(info.mtime, new Set(names()))))
+    }
     const info = await stat(pendingPath).catch(() => null)
     if (info) await moveIn(info.mtime)
   }
 
-  async function keep() {
+  async function keepUnlocked() {
     if (pendingAt === null) return
     await moveIn(new Date(pendingAt))
   }
 
-  async function retake() {
+  async function retakeUnlocked() {
     pendingAt = null
     await rm(pendingPath, { force: true })
   }
 
-  async function shoot(stillPath) {
-    await keep()
+  async function shootUnlocked(stillPath) {
+    await keepUnlocked()
     const [cmd, ...prefix] = ffmpeg
     const at = now()
     try {
-      await execFileP(cmd, [...prefix, '-y', '-i', stillPath, '-vf', FILTER, '-q:v', '2', pendingPath])
+      await execFileP(cmd, [...prefix, '-y', '-i', stillPath, '-vf', FILTER, '-q:v', '2', partPath])
+      await rename(partPath, pendingPath)
     } catch (err) {
-      await rm(pendingPath, { force: true })
+      await rm(partPath, { force: true })
       const e = new Error(String(err.stderr || err.message).trim())
       e.cause = err
       throw e
@@ -76,7 +100,7 @@ export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date() }
     pendingAt = at.getTime()
   }
 
-  async function remove(name) {
+  async function removeUnlocked(name) {
     if (typeof name !== 'string' || !PATTERN.test(name)) return `not a scan name: ${name}`
     try {
       await unlink(join(dir, name))
@@ -96,5 +120,13 @@ export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date() }
 
   const pending = () => (pendingAt === null ? null : { since: pendingAt })
 
-  return { init, shoot, keep, retake, remove, list, pending }
+  return {
+    init: locked(initUnlocked),
+    shoot: locked(shootUnlocked),
+    keep: locked(keepUnlocked),
+    retake: locked(retakeUnlocked),
+    remove: locked(removeUnlocked),
+    list,
+    pending,
+  }
 }

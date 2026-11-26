@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, writeFile, utimes, access } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, writeFile, utimes, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -96,4 +96,56 @@ test('list is newest first and ignores other files', async () => {
     await writeFile(join(dir, f), 'x')
   await scans.init()
   assert.deepEqual(scans.list(), ['2026-01-02_00-00-00-2.jpg', '2026-01-02_00-00-00.jpg', '2026-01-01_00-00-00.jpg'])
+})
+
+test('two concurrent shoots lose neither shot', async () => {
+  const { dir, root, scans } = await setup()
+  const slow = join(root, 'SLOW.jpg')
+  await writeFile(slow, 'a')
+  await Promise.all([scans.shoot(slow), scans.shoot(slow)])
+  assert.equal((await readdir(dir)).length, 1)
+  assert.ok(scans.pending())
+  await scans.keep()
+  assert.equal(scans.list().length, 2)
+})
+
+test('keep during an in-flight shoot never publishes a partial file', async () => {
+  const { dir, root, scans } = await setup()
+  const slow = join(root, 'SLOW.jpg')
+  await writeFile(slow, 'a')
+  const shooting = scans.shoot(slow)
+  const keeping = scans.keep()
+  await new Promise((r) => setTimeout(r, 100))
+  assert.deepEqual(await readdir(dir), [])
+  await Promise.all([shooting, keeping])
+  assert.equal(scans.list().length, 1)
+  assert.equal(await readFile(join(dir, scans.list()[0]), 'utf8'), 'a')
+})
+
+test('concurrent keeps do not throw', async () => {
+  const { still, scans } = await setup()
+  await scans.shoot(still)
+  await Promise.all([scans.keep(), scans.keep()])
+  assert.equal(scans.list().length, 1)
+})
+
+test('init deletes a leftover .part and adopts an orphan .incoming tmp', async () => {
+  const { dir, root, scans } = await setup()
+  await writeFile(join(root, 'pending.part.jpg'), 'half')
+  await writeFile(join(dir, '.incoming-x.tmp'), 'whole')
+  await utimes(join(dir, '.incoming-x.tmp'), new Date(2026, 10, 24, 7, 0, 0), new Date(2026, 10, 24, 7, 0, 0))
+  await scans.init()
+  assert.deepEqual(await readdir(dir), ['2026-11-24_07-00-00.jpg'])
+  await assert.rejects(access(join(root, 'pending.part.jpg')))
+})
+
+test('shoot passes greyscale then normalize filter', async () => {
+  const { root, scans, still } = await setup()
+  const rec = join(root, 'rec.mjs')
+  await writeFile(rec, "import {writeFileSync} from 'node:fs'\nconst a=process.argv.slice(2)\nwriteFileSync(process.env.REC, a[a.indexOf('-vf')+1])\nwriteFileSync(a.at(-1),'x')\n")
+  const s2 = createScans({ dir: join(root, 'd2'), pendingPath: join(root, 'p2.jpg'), ffmpeg: [process.execPath, rec] })
+  process.env.REC = join(root, 'vf.txt')
+  await s2.init()
+  await s2.shoot(still)
+  assert.equal(await readFile(process.env.REC, 'utf8'), 'hue=s=0,normalize=blackpt=black:whitept=white:smoothing=0')
 })
