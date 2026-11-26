@@ -50,6 +50,8 @@ Rough order in which you'll meet them:
   addons, disk use.
 - [Privacy](privacy.md): what leaves the phone, measuring a kiosk browser's
   traffic, hardening Chromium.
+- [Camera](camera.md): what mainline CAMSS gives you, raw capture without
+  root, libcamera's software ISP and its limits.
 - [A calm UI](calm-ui.md): what's on screen and what deliberately isn't.
 - [Licensing](licensing.md): picking an open-source license for the project.
 
