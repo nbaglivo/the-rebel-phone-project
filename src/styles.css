@@ -432,18 +432,60 @@ p {
   color: var(--on-ink);
 }
 
-/* ---------- Notes ---------- */
+/* ---------- Notebook ---------- */
 
-.note {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 0;
+.page {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-.note .text {
-  font-size: 16.5px;
-  line-height: 1.7;
+.viewfinder {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  aspect-ratio: 1940 / 2584;
+}
+
+.viewfinder .overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resume {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+}
+
+.actions .pill {
+  flex: 1;
+}
+
+.pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.page-row {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
 }
 
 /* ---------- Music ---------- */

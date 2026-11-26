@@ -4,7 +4,7 @@ import { BatteryIndicator } from '../components/BatteryIndicator'
 import { useBattery } from '../hooks/useBattery'
 import { useListen } from '../hooks/useListen'
 
-const launcher: AppId[] = ['call', 'messages', 'notes', 'listen', 'read']
+const launcher: AppId[] = ['call', 'messages', 'notebook', 'listen', 'read']
 
 export function Home({ now, time, onOpen }: { now: Date; time: string; onOpen: (app: AppId) => void }) {
   const battery = useBattery()

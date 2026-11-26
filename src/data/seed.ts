@@ -16,11 +16,6 @@ export interface Thread {
   msgs: Message[]
 }
 
-export interface Note {
-  text: string
-  when: string
-}
-
 export interface Article {
   title: string
   source: string
@@ -53,12 +48,6 @@ export const threads: Thread[] = [
       { text: 'Will do tonight.', me: true },
     ],
   },
-]
-
-export const notes: Note[] = [
-  { text: 'Buy coffee beans before Saturday.', when: 'today' },
-  { text: 'Shell idea: swipe down = back, nothing else.', when: 'yesterday' },
-  { text: 'Ask about the workshop space in Gràcia.', when: 'mon' },
 ]
 
 export const articles: Article[] = [
