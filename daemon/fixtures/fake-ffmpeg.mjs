@@ -1,0 +1,10 @@
+// Stand-in for ffmpeg in tests: copies the file after -i to the last argument.
+import { copyFileSync } from 'node:fs'
+
+const args = process.argv.slice(2)
+const input = args[args.indexOf('-i') + 1]
+if (input.includes('FAIL')) {
+  console.error('fake-ffmpeg: boom')
+  process.exit(1)
+}
+copyFileSync(input, args[args.length - 1])
