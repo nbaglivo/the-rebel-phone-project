@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AppProps } from '../App'
 import { Back } from '../components/Back'
 import { archiveLine, scanTime, useNotebook } from '../hooks/useNotebook'
@@ -13,6 +13,33 @@ export function Notebook({ time, onExit }: AppProps) {
   const [attempt, setAttempt] = useState(0)
   const [view, setView] = useState<'scan' | 'pages'>('scan')
   const [open, setOpen] = useState<string | null>(null)
+  // Set on entering and on tapping resume: mounts the preview even while the
+  // daemon still reports paused/error, since opening the stream is what restarts it.
+  const [resuming, setResuming] = useState(true)
+  const [busy, setBusy] = useState<string | null>(null)
+  const camera = notebook?.camera
+
+  useEffect(() => {
+    if (!resuming) return
+    if (camera === 'starting' || camera === 'on') {
+      setResuming(false)
+      return
+    }
+    if (camera === 'paused' || camera === 'error') {
+      const t = window.setTimeout(() => setResuming(false), 5000)
+      return () => window.clearTimeout(t)
+    }
+  }, [resuming, camera, attempt])
+
+  const run = async (name: string, body: object = {}) => {
+    if (busy) return
+    setBusy(name)
+    try {
+      await postAction(`notebook/${name}`, body)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   if (!notebook) {
     return (
@@ -23,7 +50,7 @@ export function Notebook({ time, onExit }: AppProps) {
     )
   }
 
-  const { camera, error, pending, scans, archive } = notebook
+  const { error, pending, scans, archive } = notebook
 
   if (pending != null) {
     return (
@@ -32,10 +59,10 @@ export function Notebook({ time, onExit }: AppProps) {
         <h1 className="title">Notebook</h1>
         <img className="page" src={`/notebook/pending.jpg?t=${pending}`} alt="Scan to review" />
         <div className="actions">
-          <button className="pill" onClick={() => postAction('notebook/keep')}>
+          <button className="pill" disabled={busy !== null} onClick={() => run('keep')}>
             keep
           </button>
-          <button className="pill" onClick={() => postAction('notebook/retake')}>
+          <button className="pill" disabled={busy !== null} onClick={() => run('retake')}>
             retake
           </button>
         </div>
@@ -43,9 +70,9 @@ export function Notebook({ time, onExit }: AppProps) {
     )
   }
 
-  if (view === 'pages' && open) {
+  if (view === 'pages' && open && scans.includes(open)) {
     const remove = async () => {
-      await postAction('notebook/delete', { name: open })
+      await run('delete', { name: open })
       setOpen(null)
     }
     return (
@@ -55,7 +82,7 @@ export function Notebook({ time, onExit }: AppProps) {
         <div className="scroll">
           <img className="page" src={`/scans/${open}`} alt={`Scan from ${scanTime(open)}`} />
         </div>
-        <button className="pill" onClick={remove}>
+        <button className="pill" disabled={busy !== null} onClick={remove}>
           delete
         </button>
       </div>
@@ -85,8 +112,11 @@ export function Notebook({ time, onExit }: AppProps) {
   }
 
   // 'off' mounts the preview too: opening the stream is what starts the camera.
-  const live = camera !== 'paused' && camera !== 'error'
-  const resume = () => setAttempt((n) => n + 1)
+  const live = resuming || (camera !== 'paused' && camera !== 'error')
+  const resume = () => {
+    setAttempt((n) => n + 1)
+    setResuming(true)
+  }
 
   return (
     <div className="screen">
@@ -105,7 +135,7 @@ export function Notebook({ time, onExit }: AppProps) {
           </button>
         )}
       </div>
-      <button className="pill" disabled={camera !== 'on'} onClick={() => postAction('notebook/shoot')}>
+      <button className="pill" disabled={camera !== 'on' || busy !== null} onClick={() => run('shoot')}>
         scan
       </button>
       <p className="mono muted">{archiveLine(archive, now)}</p>
