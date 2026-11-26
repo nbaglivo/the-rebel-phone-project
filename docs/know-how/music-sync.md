@@ -71,9 +71,22 @@
 - **Cost / gotchas:** the archive receiver can't pick up a corrected re-scan
   under the same name (it logs `archive skipped`); use new names. Unit-less
   `PEER_KEY` means publisher, so the phone's scans unit needs no env file.
-- **Verified:** docs/code only so far (2026-11-26); end-to-end on the phone
-  to be added.
+- **Verified:** phone + Mac, 2026-11-26: a kept scan reached `~/Notebook` in
+  ~9 s (`archive +1`); deleting it on the phone left the Mac copy and log
+  untouched.
 - **See:** `docs/device.md` → Notebook, `vendor/syncd/README.md`.
+
+## A new receiver may not find a publisher that just restarted
+
+- **Fact:** after a deploy restarted the phone's publisher and the Mac archive
+  was installed a few minutes later, they did not connect for ~9 minutes
+  (publisher `connected:false`, Mac log silent). Restarting the Mac agent
+  didn't help; restarting the publisher on the phone connected them in ~10 s.
+- **Cause:** unknown. Guess: the publisher's first DHT announce, right after
+  the restart (the previous instance had segfaulted on stop), was lost or stale.
+- **Fix:** `doas systemctl restart calm-syncd-scans` on the phone. Same drive
+  key afterwards, so nothing to re-pair.
+- **Verified:** phone + Mac, 2026-11-26.
 
 ## Running it as a background service on each side
 

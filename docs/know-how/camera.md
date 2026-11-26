@@ -164,3 +164,31 @@ hardware test, so you know what works before you design anything around it.
 - **Verified:** Mac only with the fake camera, 2026-11-26 (curl shows the
   parts; the shell side is not built yet).
 - **See:** `docs/architecture.md` → "Notebook (camera + scans)".
+
+## Notebook end to end: what a real page looked like (2026-11-26)
+
+- **Context:** first real scan with the finished pipeline: back camera (imx519),
+  a page under a lamp, shot from the shell, shipped to the Mac archive.
+- **Fact:** the still was upright (`videoflip method=clockwise` is right),
+  1940×2584, 893 KB JPEG. Handwriting legible, paper near-white, ink dark.
+  Capture to file on the Mac took ~9 s over Wi-Fi/USB (settle 5 s included).
+- **Our choice (levels):** greyscale + normalize on the still. The colour
+  normalize alone left **cyan paper** on a real frame (the soft ISP's white
+  balance is off under lamps and per-channel stretching does not fix a cast),
+  so we drop colour; for notes that costs nothing. Pick colour only if you
+  can get proper AWB.
+- **Cost / gotchas:** the thin black band on the left edge of the still is
+  still there (see the 51-px band above); crop it if it bothers you.
+- **Measured on the phone (USB-connected, screen on, 2026-11-26):**
+  - First preview frame: ~0.8 to 1.0 s after the request (3 runs).
+  - While the viewfinder streams, `gst-launch-1.0` takes 17 to 24 % in busybox
+    `top` (percent of all 8 cores, so roughly 1.4 to 1.9 cores; this reading
+    is a guess at how busybox normalises); Chromium's renderers ~0 %.
+  - Battery `current_now` (bq27411-0): ~ +93 mA idle, about -320 to -380 mA with
+    the preview open, back to +148 mA after. That is ~420 to 470 mA extra
+    draw (sign is relative to the charger on USB, so it is the swing that
+    matters, not the absolute values).
+  - After the stream closes no `gst-launch` is left running.
+- **Verified:** on the phone and the Mac, 2026-11-26.
+- **See:** `docs/know-how/music-sync.md` for the archive side.
+

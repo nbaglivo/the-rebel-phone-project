@@ -227,6 +227,14 @@ done, `deploy.sh` warns that `calm-syncd-scans` isn't enabled and carries on.
 - The phone's drive key (needed once, for the Mac):
   `ssh user@172.16.42.1 'journalctl -u calm-syncd-scans | grep -A1 "MY DRIVE KEY" | tail -1'`
 
+- **Timezone:** the phone is on GMT (`/etc/localtime` -> `/usr/share/zoneinfo/GMT`),
+  so scan file names (`YYYY-MM-DD_HH-MM-SS.jpg`) are GMT, not local time. To
+  change it: `doas setup-timezone` (exists on the phone; not run, so the exact
+  prompts are unverified) or `doas ln -sf /usr/share/zoneinfo/<Zone> /etc/localtime`.
+- **If `connected` stays false:** after a deploy the phone and the Mac archive
+  once took ~9 min to find each other; `doas systemctl restart calm-syncd-scans`
+  on the phone fixed it (docs/know-how/music-sync.md).
+
 ### Mac archive
 
 ```sh
