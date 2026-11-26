@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createCamera } from './camera.mjs'
@@ -23,6 +23,33 @@ function setup(opts = {}) {
     rmSync(dir, { recursive: true, force: true })
   }
   return { camera, states, stillPath, cleanup }
+}
+
+function withEnv(vars, fn) {
+  return async () => {
+    const prev = {}
+    for (const [k, v] of Object.entries(vars)) {
+      prev[k] = process.env[k]
+      process.env[k] = typeof v === 'function' ? v() : v
+    }
+    try {
+      await fn()
+    } finally {
+      for (const [k, v] of Object.entries(prev)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  }
+}
+
+const logPath = () => join(mkdtempSync(join(tmpdir(), 'camera-log-')), 'log')
+const readLog = (p) => {
+  try {
+    return readFileSync(p, 'utf8').split('\n').filter(Boolean)
+  } catch {
+    return []
+  }
 }
 
 function waitFor(predicate, ms = 5000) {
@@ -54,7 +81,8 @@ test('attach starts the camera and delivers frames', async () => {
   }
 })
 
-test('two clients share one process, last detach stops it', async () => {
+test('two clients share one process, last detach stops it', withEnv({ FAKE_CAMERA_LOG: logPath }, async () => {
+  const log = process.env.FAKE_CAMERA_LOG
   const { camera, cleanup } = setup()
   try {
     const a = []
@@ -66,36 +94,44 @@ test('two clients share one process, last detach stops it', async () => {
     assert.equal(camera.state().state, 'on')
     detachB()
     assert.equal(camera.state().state, 'off')
+    assert.equal(readLog(log).filter((l) => l === 'start').length, 1)
   } finally {
     cleanup()
   }
-})
+}))
 
 test('timeout pauses and detaches clients', async () => {
   const { camera, cleanup } = setup({ timeoutMs: 300 })
   try {
-    camera.attach(() => {})
-    await waitFor(() => camera.state().state === 'on')
+    const old = []
+    camera.attach((f) => old.push(f))
+    await waitFor(() => old.length >= 1)
     await waitFor(() => camera.state().state === 'paused')
-    const frames = []
-    // clients were detached: a new attach restarts the process
-    camera.attach((f) => frames.push(f))
+    const seen = old.length
+    const fresh = []
+    camera.attach((f) => fresh.push(f))
     assert.equal(camera.state().state, 'starting')
+    await waitFor(() => fresh.length >= 2)
+    assert.equal(old.length, seen)
   } finally {
     cleanup()
   }
 })
 
 test('shot() pushes the timeout back', async () => {
-  const { camera, cleanup } = setup({ timeoutMs: 800 })
+  const { camera, cleanup } = setup({ timeoutMs: 1000 })
   try {
     camera.attach(() => {})
     await waitFor(() => camera.state().state === 'on')
-    await new Promise((r) => setTimeout(r, 500))
+    const t0 = Date.now()
+    await new Promise((r) => setTimeout(r, 600))
     camera.shot()
-    await new Promise((r) => setTimeout(r, 500))
+    const shotAt = Date.now()
+    await new Promise((r) => setTimeout(r, 600))
     assert.equal(camera.state().state, 'on')
     await waitFor(() => camera.state().state === 'paused')
+    assert.ok(Date.now() - shotAt >= 900, 'paused too early after shot')
+    assert.ok(Date.now() - t0 > 1000)
   } finally {
     cleanup()
   }
@@ -142,3 +178,49 @@ test('latestStill is null until a fresh still exists', async () => {
     cleanup()
   }
 })
+
+test('a missing binary reports error', async () => {
+  const { camera, cleanup } = setup({ cmd: '/nonexistent/camera-bin' })
+  try {
+    camera.attach(() => {})
+    await waitFor(() => camera.state().state === 'error')
+    assert.match(camera.state().error, /ENOENT/)
+  } finally {
+    cleanup()
+  }
+})
+
+test('attach then immediate detach with a missing binary does not throw', async () => {
+  const { camera, cleanup } = setup({ cmd: '/nonexistent/camera-bin' })
+  try {
+    const detach = camera.attach(() => {})
+    detach()
+    assert.equal(camera.state().state, 'off')
+    await new Promise((r) => setTimeout(r, 200))
+    assert.equal(camera.state().state, 'off')
+  } finally {
+    cleanup()
+  }
+})
+
+test('stop then immediate attach never overlaps two processes', withEnv({ FAKE_CAMERA_LOG: logPath }, async () => {
+  const log = process.env.FAKE_CAMERA_LOG
+  const { camera, cleanup } = setup()
+  try {
+    camera.attach(() => {})
+    await waitFor(() => camera.state().state === 'on')
+    camera.stop('screen off')
+    const frames = []
+    camera.attach((f) => frames.push(f))
+    assert.equal(camera.state().state, 'starting')
+    await waitFor(() => camera.state().state === 'on' && frames.length >= 1)
+    let alive = 0
+    for (const line of readLog(log)) {
+      alive += line === 'start' ? 1 : -1
+      assert.ok(alive <= 1, 'two cameras alive at once')
+    }
+    assert.equal(readLog(log).filter((l) => l === 'start').length, 2)
+  } finally {
+    cleanup()
+  }
+}))

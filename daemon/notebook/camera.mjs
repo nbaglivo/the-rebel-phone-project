@@ -12,6 +12,8 @@ export function createCamera({ cmd, args, stillPath, timeoutMs = 120_000, onStat
   let timer = null
   let lastStderr = ''
   const clients = new Set()
+  let closing = null
+  let pendingStart = false
 
   function setState(next, err = null) {
     state = next
@@ -28,37 +30,63 @@ export function createCamera({ cmd, args, stillPath, timeoutMs = 120_000, onStat
     }, timeoutMs)
   }
 
+  // Stops the running process; closing resolves once it is really gone.
   function kill() {
     clearTimeout(timer)
     timer = null
+    pendingStart = false
     if (!child) return
     const c = child
     child = null
-    c.removeAllListeners('exit')
-    c.removeAllListeners('error')
-    c.stdout.removeAllListeners('data')
+    closing = new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(force)
+        if (closing === mine) closing = null
+        resolve()
+      }
+      const force = setTimeout(() => c.pid && c.kill('SIGKILL'), 2000)
+      force.unref()
+      c.once('close', done)
+      c.once('error', done)
+    })
+    const mine = closing
     c.stdin.on('error', () => {})
-    c.kill('SIGTERM')
+    // A failed spawn has no pid; kill() on it would signal our own process group.
+    if (c.pid) c.kill('SIGTERM')
   }
 
-  function start() {
+  function begin() {
+    if (child || pendingStart) return
+    setState('starting')
+    if (!closing) return spawnNow()
+    // A dying camera still holds the device: wait for it before starting the next.
+    pendingStart = true
+    closing.then(() => {
+      if (!pendingStart || clients.size === 0) return
+      pendingStart = false
+      spawnNow()
+    })
+  }
+
+  function spawnNow() {
     lastStderr = ''
     startedAt = Date.now()
-    setState('starting')
     const c = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] })
     child = c
     const split = createJpegSplitter((frame) => {
       if (state === 'starting') setState('on')
       for (const onFrame of clients) onFrame(frame)
     })
-    c.stdout.on('data', split)
+    c.stdout.on('data', (d) => {
+      if (child === c) split(d)
+    })
     c.stderr.on('data', (d) => {
       const line = String(d).trim().split('\n').pop()
       if (line) lastStderr = line
     })
     c.stdin.on('error', () => {})
     c.on('error', (err) => fail(c, err.message))
-    c.on('exit', (code, signal) => fail(c, lastStderr || `camera exited (${signal ?? code})`))
+    c.on('close', (code, signal) => fail(c, lastStderr || `camera exited (${signal ?? code})`))
     armTimeout()
   }
 
@@ -74,10 +102,10 @@ export function createCamera({ cmd, args, stillPath, timeoutMs = 120_000, onStat
   return {
     attach(onFrame) {
       clients.add(onFrame)
-      if (!child) start()
+      begin()
       return () => {
         if (!clients.delete(onFrame)) return
-        if (clients.size === 0 && child) {
+        if (clients.size === 0 && (child || pendingStart)) {
           kill()
           setState('off')
         }
@@ -85,7 +113,7 @@ export function createCamera({ cmd, args, stillPath, timeoutMs = 120_000, onStat
     },
     stop(reason) {
       clients.clear()
-      if (child) {
+      if (child || pendingStart) {
         kill()
         setState('off')
       }
