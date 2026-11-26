@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AppProps } from '../App'
 import { Back } from '../components/Back'
 import { archiveLine, scanTime, useNotebook } from '../hooks/useNotebook'
@@ -17,7 +17,33 @@ export function Notebook({ time, onExit }: AppProps) {
   // daemon still reports paused/error, since opening the stream is what restarts it.
   const [resuming, setResuming] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
+  // The preview <img> errored (e.g. refused while the screen was off): offer resume.
+  const [failed, setFailed] = useState(false)
+  // Why the last action failed, shown on one muted line for a few seconds.
+  const [message, setMessage] = useState<string | null>(null)
   const camera = notebook?.camera
+  const viewfinder = notebook != null && notebook.pending == null && view === 'scan'
+
+  // The camera dropping to 'off' under an open viewfinder means the stream died
+  // (daemon restart): reconnect once. A failed retry errors the <img> → resume button.
+  const prevCamera = useRef(camera)
+  const retried = useRef(false)
+  useEffect(() => {
+    const prev = prevCamera.current
+    prevCamera.current = camera
+    if (camera === 'on') retried.current = false
+    if (!viewfinder || camera !== 'off' || (prev !== 'on' && prev !== 'starting')) return
+    if (retried.current) return
+    retried.current = true
+    setFailed(false)
+    setAttempt((n) => n + 1)
+  }, [camera, viewfinder])
+
+  useEffect(() => {
+    if (!message) return
+    const t = window.setTimeout(() => setMessage(null), 4000)
+    return () => window.clearTimeout(t)
+  }, [message])
 
   useEffect(() => {
     if (!resuming) return
@@ -35,7 +61,9 @@ export function Notebook({ time, onExit }: AppProps) {
     if (busy) return
     setBusy(name)
     try {
-      await postAction(`notebook/${name}`, body)
+      const error = await postAction(`notebook/${name}`, body)
+      setMessage(error)
+      return error
     } finally {
       setBusy(null)
     }
@@ -66,14 +94,15 @@ export function Notebook({ time, onExit }: AppProps) {
             retake
           </button>
         </div>
+        {message && <p className="mono muted">{message}</p>}
       </div>
     )
   }
 
   if (view === 'pages' && open && scans.includes(open)) {
     const remove = async () => {
-      await run('delete', { name: open })
-      setOpen(null)
+      // A failed delete stays on the page, with the reason under the button.
+      if ((await run('delete', { name: open })) === null) setOpen(null)
     }
     return (
       <div className="screen">
@@ -85,6 +114,7 @@ export function Notebook({ time, onExit }: AppProps) {
         <button className="pill" disabled={busy !== null} onClick={remove}>
           delete
         </button>
+        {message && <p className="mono muted">{message}</p>}
       </div>
     )
   }
@@ -112,8 +142,9 @@ export function Notebook({ time, onExit }: AppProps) {
   }
 
   // 'off' mounts the preview too: opening the stream is what starts the camera.
-  const live = resuming || (camera !== 'paused' && camera !== 'error')
+  const live = !failed && (resuming || (camera !== 'paused' && camera !== 'error'))
   const resume = () => {
+    setFailed(false)
     setAttempt((n) => n + 1)
     setResuming(true)
   }
@@ -125,7 +156,13 @@ export function Notebook({ time, onExit }: AppProps) {
       <div className="viewfinder">
         {live ? (
           <>
-            <img key={attempt} className="page" src={`/camera/preview?n=${attempt}`} alt="Camera preview" />
+            <img
+              key={attempt}
+              className="page"
+              src={`/camera/preview?n=${attempt}`}
+              alt="Camera preview"
+              onError={() => setFailed(true)}
+            />
             {camera !== 'on' && <p className="mono muted overlay">starting camera…</p>}
           </>
         ) : (
@@ -138,6 +175,7 @@ export function Notebook({ time, onExit }: AppProps) {
       <button className="pill" disabled={camera !== 'on' || busy !== null} onClick={() => run('shoot')}>
         scan
       </button>
+      {message && <p className="mono muted">{message}</p>}
       <p className="mono muted">{archiveLine(archive, now)}</p>
       <button className="mono" onClick={() => setView('pages')}>
         pages
