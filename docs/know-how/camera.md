@@ -71,3 +71,64 @@ hardware test, so you know what works before you design anything around it.
   getting camera access into the browser at all. That would follow the
   daemon-owns-the-system rule.
 - **Verified:** on the phone, 2026-11-26.
+
+## One GStreamer process gives both a live preview and a full-size still
+
+- **Context:** the notebook scanner needs a live viewfinder in the browser
+  and a sharp still at shot time, without camera access in the browser. The
+  daemon owns the camera, so it needs one process whose output it can read.
+- **Fact (pmOS, GStreamer 1.28.3, libcamera 0.7.1):** `libcamerasrc` comes
+  from `libcamera-gstreamer`; `jpegenc`, `multifilesink`, `videoflip` from
+  `gst-plugins-base`/`gst-plugins-good`. But **`gst-launch-1.0` and
+  `gst-inspect-1.0` are in `gstreamer-tools`, which neither pulls in**. Without
+  doas we tested with `apk fetch gstreamer-tools` and ran the binary extracted
+  from the `.apk` (a gzip tarball) under `/tmp`; the phone itself needs
+  `doas apk add gstreamer-tools`.
+- **Fact:** `libcamerasrc` on the imx519 negotiates `RGBA 2584×1940` (the soft
+  ISP's output) with the caps below; no format had to be forced. The frame is
+  landscape and sideways: `videoflip method=clockwise` makes it portrait
+  1940×2584. Direction checked on an earlier `cam` capture of a notebook page
+  (text read upright after a clockwise turn); the scene during this test was
+  dark, so the gst still itself only proves the size.
+- **Our choice:** one `gst-launch-1.0 -q` process, a `tee`, two leaky branches
+  (`daemon/notebook/pipeline.mjs`):
+
+  ```sh
+  gst-launch-1.0 -q libcamerasrc camera-name=/base/soc@0/cci@ac4a000/i2c-bus@0/camera@1a \
+    ! video/x-raw,width=2584,height=1940 ! videoconvert ! videoflip method=clockwise ! tee name=t \
+    t. ! queue leaky=downstream max-size-buffers=1 ! videorate ! video/x-raw,framerate=10/1 \
+       ! videoscale ! video/x-raw,width=405,height=540 ! jpegenc quality=70 ! fdsink fd=1 \
+    t. ! queue leaky=downstream max-size-buffers=1 ! videorate ! video/x-raw,framerate=2/1 \
+       ! jpegenc quality=92 ! multifilesink location=/path/still.jpg
+  ```
+
+  `-q` keeps stdout pure: it carries only concatenated JPEGs, split on
+  FFD8…FFD9. Pick the camera by `camera-name` (its id from `cam -l`), not by
+  enumeration order.
+- **Measured (on the phone, 2026-11-26, Chromium kiosk idle alongside):**
+  - first preview frame and first still **~0.7–0.8 s** after spawn;
+  - preview **10.0 fps** (405×540, ~24 KB a frame), still rewritten
+    **2.0×/s** (1940×2584, ~1.6–2.3 MB);
+  - gst-launch CPU **~1.7 cores** (833 ticks in 5 s from `/proc/PID/stat`;
+    busybox `top` shows 17 %, a share of all 8 cores). Most of it is the
+    full-size `videoconvert` + rotation + 2×/s `jpegenc quality=92`.
+  - `SIGINT` stops it cleanly (exit 0).
+- **Gotcha:** `multifilesink` with a fixed `location` (no `%d`) is not atomic:
+  per buffer it opens the file with truncate, writes, closes. Over ~9 000
+  back-to-back reads during 40 rewrites we never saw a short or empty file
+  (tmpfs, one ~2 MB write), but the window exists. A reader that must not see
+  half a file should check the JPEG ends in FFD9 and retry, or copy it first.
+  Atomic alternatives: `location=still-%d.jpg max-files=2` and read the
+  older of the two, or send the still down a second pipe instead of a file.
+- **Gotcha:** the still has a **51-px black band on its left edge** (the
+  bottom rows of the sensor frame before rotation). Seen in a dark scene;
+  unknown whether it is the soft ISP or optics. Crop it if it shows on paper.
+- **Gotcha:** `libcamerasrc`'s `ae-enable` property defaults to `false` in
+  `gst-inspect`. In a dark scene `true` gave a still of the same size (not viewed);
+  check auto-exposure in daylight before relying on the default.
+- **Alternatives:** two processes (`cam` for stills, a separate stream for
+  preview) would fight over the one camera. A smaller capture size would cut
+  CPU a lot but lose the still's resolution; a `role=viewfinder` stream plus a
+  separate still-capture stream on `src_%u` might be cheaper, untested.
+- **Verified:** on the phone, 2026-11-26.
+- **See:** `daemon/notebook/pipeline.mjs`, `daemon/notebook/camera.mjs`.
