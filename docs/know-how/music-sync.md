@@ -54,6 +54,27 @@
   (`SIGSEGV` in node) when systemd stopped it after hours of running. With
   `Restart=always` it came back, so the only sign was in the journal.
 
+## For scans, mirroring is the wrong shape: use an archive receiver
+
+- **Context:** notebook pages go phone → Mac. The phone is small and its
+  copy is disposable; the Mac copy is the keeper.
+- **Fact:** a mirror receiver makes the folder equal to the publisher's, so
+  deleting a page on the phone would delete it on the Mac, and moving or
+  renaming a page on the Mac would be undone (re-fetched) on the next pull.
+- **Our choice:** a second syncd instance on the phone publishes `~/scans`;
+  the Mac receives with `ARCHIVE=1`: copy each key once, remember it
+  (`received.json`), never delete, overwrite or re-fetch. Two independent
+  instances, one per direction, each with its own storage and key.
+- **Alternatives:** plain `rsync`/`scp` of new files over USB or Wi-Fi is
+  simpler if the phone is always reachable; a mirror is right when the
+  receiver's folder should reflect the source (music).
+- **Cost / gotchas:** the archive receiver can't pick up a corrected re-scan
+  under the same name (it logs `archive skipped`); use new names. Unit-less
+  `PEER_KEY` means publisher, so the phone's scans unit needs no env file.
+- **Verified:** docs/code only so far (2026-11-26); end-to-end on the phone
+  to be added.
+- **See:** `docs/device.md` → Notebook, `vendor/syncd/README.md`.
+
 ## Running it as a background service on each side
 
 - **Mac:** a launchd agent. launchd has no mise shims, so the agent pins

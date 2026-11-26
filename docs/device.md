@@ -191,6 +191,60 @@ Re-checked on 2026-11-13 with the syncd from `ba6facd`:
    then `doas systemctl restart calm-syncd`.
 3. The first sync replaces whatever is in the phone's `~/Music`.
 
+## Notebook (scans)
+
+Notebook photographs paper with the back camera; pages land in `~/scans` and
+reach the Mac through a second syncd, as an archive.
+
+Packages on the phone (one-time, with the setup below):
+`libcamera-gstreamer gst-plugins-good gstreamer-tools` (`gst-launch-1.0`) and
+`ffmpeg`.
+
+### Phone
+
+A second instance of the same code, `calm-syncd-scans` (unit
+`scripts/calm-syncd-scans.service`, deployed to `/opt/calm-syncd/`), publishes
+`~/scans` (no `PEER_KEY`, so it's the publisher). One-time setup (doas
+password: run it in a real terminal, not via `!`):
+
+```sh
+scp scripts/calm-syncd-scans.service user@172.16.42.1:/tmp/
+ssh user@172.16.42.1 'install -d ~/scans ~/.local/share/syncd-scans ~/.local/state/syncd-scans'
+ssh -t user@172.16.42.1 doas sh -c '"apk add libcamera-gstreamer gst-plugins-good gstreamer-tools ffmpeg &&
+  install -o user -g user -m 644 /tmp/calm-syncd-scans.service /opt/calm-syncd/ &&
+  systemctl link /opt/calm-syncd/calm-syncd-scans.service && systemctl enable calm-syncd-scans &&
+  printf \"%s\n\" \"permit nopass user as root cmd systemctl args restart calm-syncd-scans\" >> /etc/doas.d/zz-calm.conf"'
+```
+
+(Needs the music setup above first: `/opt/calm-syncd` must exist.) Until it is
+done, `deploy.sh` warns that `calm-syncd-scans` isn't enabled and carries on.
+
+- Scans: `~/scans` (`SCANS_DIR` for the daemon)
+- Storage (holds the drive key, keep it): `~/.local/share/syncd-scans`
+- Status (read by the daemon): `~/.local/state/syncd-scans/status.json`
+  (`SCANS_STATUS_FILE`)
+- Logs: `journalctl -u calm-syncd-scans -f`
+- The phone's drive key (needed once, for the Mac):
+  `ssh user@172.16.42.1 'journalctl -u calm-syncd-scans | grep -A1 "MY DRIVE KEY" | tail -1'`
+
+### Mac archive
+
+```sh
+./scripts/mac/install-archive.sh <phone-drive-key>            # ~/Notebook
+./scripts/mac/install-archive.sh <phone-drive-key> ~/Other
+```
+
+A second launchd agent, `dev.rebelphone.syncd-archive`, receives into
+`~/Notebook` with `ARCHIVE=1`: it keeps every page it has received, never
+deletes or overwrites, so you can move or rename pages on the Mac and delete
+them on the phone. It shares the code in `~/Library/Application Support/syncd/app`
+with the music agent but has its own storage and log.
+
+- Storage: `~/Library/Application Support/syncd/archive-storage`
+- Log: `~/Library/Logs/syncd-archive.log`
+- Status: `launchctl print gui/$(id -u)/dev.rebelphone.syncd-archive | grep state`
+- Stop: `launchctl bootout gui/$(id -u)/dev.rebelphone.syncd-archive`
+
 ## Gotchas we already hit
 
 - **SSH over Wi-Fi** (USB unplugged): `ssh -o HostKeyAlias=172.16.42.1

@@ -46,7 +46,7 @@ Rough order in which you'll meet them:
   idle and power key from `/dev/input`, wake detection, blanking.
 - [Audio](audio.md): the silent default sink, keeping PulseAudio up, mpv over
   IPC, volume keys and the headphone jack.
-- [Music sync](music-sync.md): one-way P2P sync from the laptop, musl native
+- [Music sync](music-sync.md): one-way P2P sync from the laptop (and an archive receiver for scans), musl native
   addons, disk use.
 - [Privacy](privacy.md): what leaves the phone, measuring a kiosk browser's
   traffic, hardening Chromium.

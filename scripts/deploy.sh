@@ -39,10 +39,10 @@ if [ ! -f vendor/syncd/syncd.mjs ]; then
   echo "warning: vendor/syncd missing (git submodule update --init), syncd not deployed" >&2
 elif command -v rsync >/dev/null && ssh "$PHONE" 'command -v rsync' >/dev/null; then
   ./scripts/build-musl-addons.sh
-  rsync -a --delete --exclude node_modules --exclude .git --exclude .musl --exclude calm-syncd.service \
+  rsync -a --delete --exclude node_modules --exclude .git --exclude .musl --exclude 'calm-syncd*.service' \
     vendor/syncd/ "$PHONE:/opt/calm-syncd/"
   rsync -a --delete --include '*/' --include '*.node' --exclude '*' .cache/musl-addons/ "$PHONE:/opt/calm-syncd/.musl/"
-  rsync -a scripts/calm-syncd.service "$PHONE:/opt/calm-syncd/calm-syncd.service"
+  rsync -a scripts/calm-syncd.service scripts/calm-syncd-scans.service "$PHONE:/opt/calm-syncd/"
   ssh "$PHONE" 'set -e
     cd /opt/calm-syncd
     sum=$(sha256sum package-lock.json | cut -d" " -f1)
@@ -60,6 +60,12 @@ elif command -v rsync >/dev/null && ssh "$PHONE" 'command -v rsync' >/dev/null; 
         { echo "syncd: musl addon $name does not load" >&2; exit 1; }
     done'
   ssh "$PHONE" 'doas systemctl daemon-reload && doas systemctl restart calm-syncd'
+  # Notebook scans publisher: only once the one-time setup enabled it.
+  if ssh "$PHONE" 'systemctl is-enabled --quiet calm-syncd-scans'; then
+    ssh "$PHONE" 'doas systemctl restart calm-syncd-scans'
+  else
+    echo "warning: calm-syncd-scans is not enabled, scans won't sync (docs/device.md → Notebook)" >&2
+  fi
 else
   echo "warning: rsync missing on the Mac or the phone, syncd not deployed" >&2
 fi
@@ -67,4 +73,4 @@ fi
 ssh "$PHONE" 'doas systemctl restart tinydm || doas systemctl start tinydm'
 
 echo "Deployed. Logs: ssh $PHONE 'tail -f ~/.local/state/tinydm.log'"
-echo "Sync logs: ssh $PHONE 'journalctl -u calm-syncd -f'"
+echo "Sync logs: ssh $PHONE 'journalctl -u calm-syncd -f'  (scans: -u calm-syncd-scans)"
