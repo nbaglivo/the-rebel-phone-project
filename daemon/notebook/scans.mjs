@@ -23,7 +23,7 @@ export function scanName(date, taken) {
   return name
 }
 
-export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date() }) {
+export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date(), ffmpegTimeoutMs = 20_000 }) {
   let pendingAt = null
   // Ends in .jpg so ffmpeg infers the format; renamed over pendingPath once complete.
   const partPath = pendingPath.replace(/(\.jpg)?$/, '.part.jpg')
@@ -89,7 +89,11 @@ export function createScans({ dir, pendingPath, ffmpeg, now = () => new Date() }
     const [cmd, ...prefix] = ffmpeg
     const at = now()
     try {
-      await execFileP(cmd, [...prefix, '-y', '-i', stillPath, '-vf', FILTER, '-q:v', '2', partPath])
+      // A hung encode must fail: screen off waits for the shot before it can suspend.
+      await execFileP(cmd, [...prefix, '-y', '-i', stillPath, '-vf', FILTER, '-q:v', '2', partPath], {
+        timeout: ffmpegTimeoutMs,
+        killSignal: 'SIGKILL',
+      })
       await rename(partPath, pendingPath)
     } catch (err) {
       await rm(partPath, { force: true })

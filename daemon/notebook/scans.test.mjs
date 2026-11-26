@@ -149,3 +149,23 @@ test('shoot passes greyscale then normalize filter', async () => {
   await s2.shoot(still)
   assert.equal(await readFile(process.env.REC, 'utf8'), 'hue=s=0,normalize=blackpt=black:whitept=white:smoothing=0')
 })
+
+test('a hung ffmpeg is killed: shoot rejects, nothing pending, no .part left', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'scans-'))
+  const pendingPath = join(root, 'pending.jpg')
+  const scans = createScans({
+    dir: join(root, 'scans'),
+    pendingPath,
+    ffmpeg: [process.execPath, fake],
+    ffmpegTimeoutMs: 300,
+  })
+  await scans.init()
+  const still = join(root, 'HANG.jpg')
+  await writeFile(still, 'jpeg-bytes')
+  const t0 = Date.now()
+  await assert.rejects(scans.shoot(still))
+  assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0} ms`)
+  assert.equal(scans.pending(), null)
+  await assert.rejects(access(pendingPath))
+  await assert.rejects(access(join(root, 'pending.part.jpg')))
+})
