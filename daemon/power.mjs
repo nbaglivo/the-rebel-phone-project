@@ -6,10 +6,11 @@ import { join } from 'node:path'
 /**
  * Suspend stops audio and network, so while something plays or syncd is
  * pulling, the screen only blanks.
- * Idle never turns the screen off while on USB power; the power key still does.
+ * Idle never turns the screen off while on USB power or while the camera
+ * preview is watched (aiming needs no touches); the power key still does.
  */
-export function decideScreenOff({ reason, playing, usb, syncing = false }) {
-  if (reason === 'idle' && usb) return 'stay'
+export function decideScreenOff({ reason, playing, usb, syncing = false, previewing = false }) {
+  if (reason === 'idle' && (usb || previewing)) return 'stay'
   return playing || syncing ? 'blank' : 'suspend'
 }
 

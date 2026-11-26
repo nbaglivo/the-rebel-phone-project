@@ -45,6 +45,12 @@
 - **Gotcha:** a "keep awake" signal from another process must expire. syncd's
   status counts only if written in the last 2 minutes, so a crashed or
   stalled syncd can't keep the phone awake forever.
+- **Our choice (2026-11-26):** a second syncd publishing notebook scans
+  counts as "syncing" while its status file says `uploading` (stale after
+  3 minutes). An open camera preview keeps idle from turning the screen
+  off at all (aiming needs no touches), bounded by the camera's own
+  2-minute no-shot timeout; the power key still turns it off, and any
+  screen off stops the camera first. Verified on the Mac with fakes only.
 - **Fact:** the backlight
   (`/sys/class/backlight/ae94000.dsi.0/brightness`, max 512 in use) is
   `root:video 664` and `user` is in `video`, so no udev rule is needed.

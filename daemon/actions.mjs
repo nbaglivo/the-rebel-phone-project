@@ -15,7 +15,7 @@ export function validateListenAction(name, body, has) {
   }
 }
 
-export function createActions({ setScreen, player }) {
+export function createActions({ setScreen, player, notebook }) {
   const listen = (name, run) => async (body) => {
     const error = validateListenAction(name, body, player.has)
     if (error) return error
@@ -33,5 +33,12 @@ export function createActions({ setScreen, player }) {
     'listen/restart': listen('listen/restart', () => player.restart()),
     'listen/next': listen('listen/next', () => player.next()),
     'listen/rescan': listen('listen/rescan', () => player.rescan()),
+    'notebook/shoot': () => notebook.shoot(),
+    'notebook/keep': () => notebook.keep(),
+    'notebook/retake': () => notebook.retake(),
+    'notebook/delete': ({ name }) => {
+      if (typeof name !== 'string') return '`name` must be a string'
+      return notebook.remove(name)
+    },
   }
 }

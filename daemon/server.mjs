@@ -21,6 +21,11 @@ import { createPlayer } from './listen/player.mjs'
 import { probe } from './listen/probe.mjs'
 import { watchLibrary } from './listen/watch.mjs'
 import { createStore } from './listen/store.mjs'
+import { createArchiveStatus } from './notebook/archive-status.mjs'
+import { createCamera } from './notebook/camera.mjs'
+import { createNotebook } from './notebook/notebook.mjs'
+import { buildPipeline } from './notebook/pipeline.mjs'
+import { createScans } from './notebook/scans.mjs'
 
 const HOST = '127.0.0.1'
 const PORT = Number(process.env.PORT ?? 8080)
@@ -36,6 +41,12 @@ const STATE_FILE = process.env.STATE_FILE ?? join(homedir(), '.local/state/calm/
 const MPV_CMD = process.env.MPV_CMD ?? 'mpv'
 const FFPROBE_CMD = process.env.FFPROBE_CMD ?? 'ffprobe'
 const SYNC_STATUS_FILE = process.env.SYNC_STATUS_FILE ?? join(homedir(), '.local/state/syncd/status.json')
+const SCANS_DIR = process.env.SCANS_DIR ?? join(homedir(), 'scans')
+const CAMERA_CMD = (process.env.CAMERA_CMD ?? 'gst-launch-1.0').split(' ')
+const CAMERA_STILL = process.env.CAMERA_STILL ?? join(process.env.XDG_RUNTIME_DIR ?? tmpdir(), 'calm-still.jpg')
+const PENDING_FILE = process.env.PENDING_FILE ?? join(homedir(), '.local/state/calm/pending.jpg')
+const FFMPEG_CMD = (process.env.FFMPEG_CMD ?? 'ffmpeg').split(' ')
+const SCANS_STATUS_FILE = process.env.SCANS_STATUS_FILE ?? join(homedir(), '.local/state/syncd-scans/status.json')
 
 // ---------- State + SSE ----------
 
@@ -123,7 +134,9 @@ let blankSuspendTimer
 let canWake = false
 let switching = false // one transition at a time: the off path awaits sysfs
 const syncStatus = createSyncStatus(SYNC_STATUS_FILE)
-const busy = async () => player.isPlaying() || (await syncStatus.isSyncing())
+// syncd pulling music or publishing scans to the archive: both need the network awake.
+const syncing = async () => (await syncStatus.isSyncing()) || (await notebook.uploading())
+const busy = async () => player.isPlaying() || (await syncing())
 
 function armIdle() {
   clearTimeout(idleTimer)
@@ -161,15 +174,20 @@ async function switchScreen(on, reason) {
     return armIdle()
   }
   const playing = player.isPlaying()
-  const syncing = await syncStatus.isSyncing()
+  const sync = await syncing()
   const usb = await usbOnline(POWER_SUPPLY_DIR)
-  const decision = decideScreenOff({ reason, playing, usb, syncing })
-  console.error(`screen: off requested (${reason}, playing=${playing}, syncing=${syncing}, usb=${usb}) → ${decision}`)
+  const previewing = notebook.previewing()
+  const decision = decideScreenOff({ reason, playing, usb, syncing: sync, previewing })
+  console.error(
+    `screen: off requested (${reason}, playing=${playing}, syncing=${sync}, usb=${usb}, previewing=${previewing}) → ${decision}`,
+  )
   if (decision === 'stay') return armIdle()
   screenOn = false
   changedAt = Date.now()
   clearTimeout(idleTimer)
   publish('screen', { on: false })
+  // The camera never runs with the screen off; a shot waiting for review is kept.
+  await notebook.screenOff().catch((err) => console.error(`notebook: ${err.message}`))
   if (decision === 'blank') {
     blanked = true
     await backlight.blank()
@@ -340,7 +358,30 @@ const player = createPlayer({
   sinks: { speaker: SPEAKER_SINK, headphones: HEADPHONES_SINK },
 })
 
-const actions = createActions({ setScreen, player })
+// ---------- Notebook (camera + scans) ----------
+
+let notebook
+const camera = createCamera({
+  cmd: CAMERA_CMD[0],
+  args: [...CAMERA_CMD.slice(1), ...buildPipeline({ stillPath: CAMERA_STILL })],
+  stillPath: CAMERA_STILL,
+  onState: ({ state, error }) => {
+    if (error) console.error(`notebook: camera ${state}: ${error}`)
+    notebook.refresh()
+  },
+})
+const scans = createScans({ dir: SCANS_DIR, pendingPath: PENDING_FILE, ffmpeg: FFMPEG_CMD })
+const archiveStatus = createArchiveStatus(SCANS_STATUS_FILE)
+notebook = createNotebook({
+  camera,
+  scans,
+  readArchive: archiveStatus.read,
+  publish,
+  scansDir: SCANS_DIR,
+  pendingPath: PENDING_FILE,
+})
+
+const actions = createActions({ setScreen, player, notebook })
 
 async function action(req, res, name) {
   if (!Object.hasOwn(actions, name)) return send(res, 404, 'Unknown action')
@@ -368,6 +409,11 @@ const server = createServer((req, res) => {
   const { pathname } = new URL(req.url ?? '/', 'http://localhost')
   if (pathname === '/events' && req.method === 'GET') return events(req, res)
   if (pathname.startsWith('/actions/')) return action(req, res, pathname.slice('/actions/'.length))
+  if (req.method === 'GET') {
+    if (pathname === '/camera/preview') return notebook.preview(req, res)
+    if (pathname === '/notebook/pending.jpg') return notebook.pendingImage(res)
+    if (pathname.startsWith('/scans/')) return notebook.image(res, pathname.slice('/scans/'.length))
+  }
   if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res, pathname)
   send(res, 405, 'Method not allowed')
 })
@@ -376,6 +422,15 @@ await pollBattery()
 setInterval(pollBattery, POLL_MS)
 publish('screen', { on: true })
 watchInput()
+
+// A pending shot left by a crash becomes a scan; then the archive line every POLL_MS.
+try {
+  await scans.init()
+} catch (err) {
+  console.error(`notebook: can't prepare ${SCANS_DIR}: ${err.message}`)
+}
+await notebook.pollArchive()
+setInterval(() => notebook.pollArchive().catch((err) => console.error(`notebook: ${err.message}`)), POLL_MS)
 
 // Not awaited: probing a large library on first run must not delay the shell.
 ;(async () => {
@@ -399,6 +454,7 @@ process.on('unhandledRejection', (err) => console.error(`unhandled: ${err?.stack
 // pool threads, and the ones blocked reading /dev/input never return.
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, async () => {
+    camera.stop('shutting down')
     await player.flush().catch(() => {})
     await mpv.stop().catch(() => {})
     process.kill(process.pid, signal)

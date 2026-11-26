@@ -120,6 +120,11 @@ hardware test, so you know what works before you design anything around it.
   half a file should check the JPEG ends in FFD9 and retry, or copy it first.
   Atomic alternatives: `location=still-%d.jpg max-files=2` and read the
   older of the two, or send the still down a second pipe instead of a file.
+  **Our choice:** at shot time the daemon reads the still into memory,
+  accepts it only if it starts FFD8 and ends FFD9, retries up to 5× every
+  100 ms, and gives ffmpeg its own copy, so a rewrite during the encode
+  can't corrupt the scan (`daemon/notebook/notebook.mjs`; unit-tested with
+  a truncated file, not yet seen on the phone).
 - **Gotcha:** the still has a **51-px black band on its left edge** (the
   bottom rows of the sensor frame before rotation). Seen in a dark scene;
   unknown whether it is the soft ISP or optics. Crop it if it shows on paper.
@@ -132,3 +137,30 @@ hardware test, so you know what works before you design anything around it.
   separate still-capture stream on `src_%u` might be cheaper, untested.
 - **Verified:** on the phone, 2026-11-26.
 - **See:** `daemon/notebook/pipeline.mjs`, `daemon/notebook/camera.mjs`.
+
+## Stream the browser preview as MJPEG over plain HTTP, not through the state channel
+
+- **Context:** the shell is a thin page that only talks to the daemon over
+  SSE (state) and POST (actions). The viewfinder needs ~10 small JPEGs a
+  second from a camera the daemon owns.
+- **Fact:** Chromium renders `multipart/x-mixed-replace` (MJPEG) natively in
+  an `<img>`: no JS, no decode loop, and closing the `<img>` closes the
+  request, which is exactly the "someone is watching" signal the daemon
+  needs to start and stop the camera.
+- **Our choice:** `GET /camera/preview` streams parts
+  `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: N\r\n\r\n<jpeg>\r\n`;
+  a slow client skips frames (`res.writableNeedDrain`) instead of buffering.
+  When the camera stops on its own (timeout, crash, screen off) the daemon
+  ends the response itself; the camera state goes out on the SSE event,
+  so the shell knows why. Still images (pending shot, scans) are plain GETs.
+  It is the one exception to the single-transport rule: pixels only, never
+  state.
+- **Alternatives:** frames as base64 in SSE (+33 % bytes, a JS decode and
+  `<img src>` swap per frame); a WebSocket (needs a hand-written framing
+  layer in a zero-dependency daemon); WebRTC or `getUserMedia` in Chromium
+  (the better call if you want real video at higher fps and your browser
+  can open the camera through PipeWire/portals, which cage + libcamera
+  here doesn't give us without more plumbing).
+- **Verified:** Mac only with the fake camera, 2026-11-26 (curl shows the
+  parts; the shell side is not built yet).
+- **See:** `docs/architecture.md` → "Notebook (camera + scans)".

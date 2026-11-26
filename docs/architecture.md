@@ -9,6 +9,8 @@
 │                                     │  GET /            (static build)             │
 │                                     │  GET /events      (SSE: state → shell)       │
 │                                     │  POST /actions/*  (commands → system)        │
+│                                     │  GET /camera/preview, /scans/*, /notebook/*  │
+│                                     │                   (images: camera + scans)   │
 │                                     ▼                                              │
 │                              daemon (Node, 127.0.0.1:8080)                         │
 │                                     │                                              │
@@ -46,6 +48,12 @@ Config via env vars (with phone defaults), so it runs on the Mac against fixture
 | `MPV_CMD`          | `mpv` (Mac tests: `mpv --ao=null`) |
 | `FFPROBE_CMD`      | `ffprobe`                  |
 | `SYNC_STATUS_FILE` | `~/.local/state/syncd/status.json` (written by syncd) |
+| `SCANS_DIR`        | `~/scans` (published to the archive by the scans syncd) |
+| `CAMERA_CMD`       | `gst-launch-1.0` (split on spaces; Mac: `node daemon/fixtures/fake-camera.mjs`) |
+| `CAMERA_STILL`     | `$XDG_RUNTIME_DIR/calm-still.jpg` (tmpdir if unset) |
+| `PENDING_FILE`     | `~/.local/state/calm/pending.jpg` (the shot waiting for keep/retake) |
+| `FFMPEG_CMD`       | `ffmpeg` (split on spaces; Mac: `node daemon/fixtures/fake-ffmpeg.mjs`) |
+| `SCANS_STATUS_FILE`| `~/.local/state/syncd-scans/status.json` (written by the scans syncd) |
 | `SPEAKER_SINK`     | `alsa_output.platform-sound.HiFi__Speaker__sink` |
 | `HEADPHONES_SINK`  | `alsa_output.platform-sound.HiFi__Headphones__sink` |
 
@@ -58,6 +66,18 @@ each file as `*.localdrive.tmp` and renaming it when complete. The daemon only
 reads files: it rescans the library when `MUSIC_DIR` changes and reads syncd's
 status file to keep the phone awake (blanked) while a pull is running. No UI;
 logs in `journalctl -u calm-syncd`. Setup: `docs/device.md` → "Music sync".
+
+## Scans sync
+
+A second syncd instance (`calm-syncd-scans`) **publishes** `SCANS_DIR`; on
+the Mac a syncd in **archive mode** (`ARCHIVE=1`: pull only, never delete,
+never re-fetch a key it already received) receives it into `~/Notebook`.
+Scans land in `SCANS_DIR` by rename only, so syncd never sees half a file.
+The publisher writes `SCANS_STATUS_FILE` (`{ role, connected, uploading,
+lastUpload, at }`, rewritten at least every 60 s); the daemon reads it every
+`POLL_MS` into the `notebook` event (`daemon/notebook/archive-status.mjs`)
+and treats a file older than 3 minutes as not connected. While it says
+`uploading`, the phone blanks instead of suspending, like a music pull.
 
 ## Event contract (`GET /events`, server-sent events)
 
@@ -72,6 +92,45 @@ logs in `journalctl -u calm-syncd`. Setup: `docs/device.md` → "Music sync".
 | `screen`   | `{ on: boolean }` | `false` while suspending or suspended, see below |
 | `listen`   | `{ current: { id, title, folder, duration } \| null, playing, position, positionAt, error: string \| null }` | the player (`daemon/listen/`); sent on changes and at most every 5 s while playing — the shell interpolates from `positionAt` (ms) |
 | `library`  | `[{ id, title, folder, duration, position, lastPlayed }]`, recently played first, then unplayed by title | scan of `MUSIC_DIR` (`id` = path relative to it), rescanned 3 s after files there stop changing (`*.localdrive.tmp` ignored) |
+| `notebook` | `{ camera: "off"\|"starting"\|"on"\|"paused"\|"error", error: string \| null, pending: number \| null, scans: string[], archive: { connected, uploading, lastReceived: number \| null } \| null }` | `daemon/notebook/`: camera state on every change; `pending` = capture time (ms) of the shot awaiting review, also the shell's cache key for its image; `scans` = file names in `SCANS_DIR`, newest first; `archive` = `SCANS_STATUS_FILE` (null: no file, scans sync not set up) |
+
+### Notebook (camera + scans)
+
+The camera is one `gst-launch-1.0` process (`daemon/notebook/pipeline.mjs`)
+with two outputs: small preview JPEGs on stdout and a full-size still
+rewritten twice a second at `CAMERA_STILL`. It runs **only while a client
+holds `GET /camera/preview` open**: the first viewer starts it, the last one
+leaving stops it, and 2 minutes without a shot stop it as `paused` (open
+preview responses end; the shell offers "tap to resume"). A crash is
+`error` with gst's last stderr line. Screen off (power key, idle, blank)
+stops the camera, and idle never turns the screen off while a preview is
+open (aiming needs no touches; the 2-minute timeout bounds it).
+
+A shot reads the latest still, checks it is a whole JPEG (starts FFD8, ends
+FFD9; `multifilesink` rewrites the file in place, so a read can catch it
+half-written), retries up to 5× every 100 ms, and hands ffmpeg a private
+copy. ffmpeg levels it (greyscale + normalize) into `PENDING_FILE`. Keep moves
+it into `SCANS_DIR` as `YYYY-MM-DD_HH-MM-SS.jpg` (local capture time);
+retake deletes it. A new shot, screen off and a daemon restart all keep a
+pending shot rather than lose it; leaving the preview leaves it pending.
+
+**Images over GET, beside `/events`.** This is the one exception to "one
+SSE stream, actions for the rest": SSE carries text, and a camera preview
+pushed through it as base64 would cost a third more bytes plus a decode per
+frame in JS. The preview is a plain media stream instead — `multipart/x-mixed-replace`
+(MJPEG) that Chromium renders natively in an `<img>` — and still images are
+plain GETs. State (camera on/paused, pending, scans) still only travels in
+the `notebook` event; these endpoints carry pixels only:
+
+- `GET /camera/preview` — `multipart/x-mixed-replace; boundary=frame`, each
+  part `Content-Type: image/jpeg` with `Content-Length`; `Cache-Control:
+  no-cache`. Opening it starts the camera, closing it detaches. Slow clients
+  skip frames.
+- `GET /notebook/pending.jpg` — the shot awaiting review (404 if none).
+- `GET /scans/<name>` — a kept scan; only names in the `scans` list (404
+  otherwise, so nothing outside `SCANS_DIR` is reachable).
+
+Both images are `image/jpeg`, `Cache-Control: no-cache`.
 
 ### Listen
 
@@ -110,7 +169,10 @@ goes off:
   When both have stopped while blanked, it suspends after `IDLE_MS`.
   "Syncing" = syncd's status file (`SYNC_STATUS_FILE`) says `"syncing": true`
   and was written in the last 2 minutes (`daemon/sync.mjs`), so a crashed or
-  stalled syncd can't keep the phone awake.
+  stalled syncd can't keep the phone awake. The scans publisher uploading to
+  the archive (`SCANS_STATUS_FILE`, see "Scans sync") counts as syncing too.
+- **Camera preview open** (idle only): **stay** on. The power key still
+  turns the screen off, and screen off stops the camera.
 - **On USB or mains power** (any `POWER_SUPPLY_DIR` supply of type `USB` or
   `Mains` with `online == 1`): idle never turns the screen off; the power key
   still does.
@@ -127,7 +189,11 @@ so the daemon starts on the speaker.
 Built: `screen { on: boolean }` (`false` suspends);
 `listen/play { id? }` (no `id`: resume current; unknown `id` → 400),
 `listen/pause`, `listen/seek { to }` (seconds, clamped to the file),
-`listen/back` (−30 s), `listen/restart`, `listen/next`, `listen/rescan`.
+`listen/back` (−30 s), `listen/restart`, `listen/next`, `listen/rescan`;
+`notebook/shoot` (400 `camera not ready` before the first still of this
+camera run, 400 if the still stays unreadable), `notebook/keep`,
+`notebook/retake`, `notebook/delete { name }` (a scan name from the event;
+phone copy only, the archive keeps its own).
 
 Planned: `brightness { level }`, `call { number }`, `call/hangup`,
 `sms/send { to, body }`, `suspend`. Return `204` on success, `4xx` with

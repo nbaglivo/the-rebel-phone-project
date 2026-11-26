@@ -41,3 +41,9 @@ test('usbOnline sees any online USB or Mains supply', async () => {
   assert.equal(await usbOnline(dir), true)
   assert.equal(await usbOnline('/nope'), false)
 })
+
+test('idle never turns the screen off while the camera preview is watched; the power key still does', () => {
+  assert.equal(decideScreenOff({ reason: 'idle', playing: false, usb: false, previewing: true }), 'stay')
+  assert.equal(decideScreenOff({ reason: 'power', playing: false, usb: false, previewing: true }), 'suspend')
+  assert.equal(decideScreenOff({ reason: 'idle', playing: false, usb: false, previewing: false }), 'suspend')
+})
